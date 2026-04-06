@@ -1,3 +1,7 @@
+-- ai_chat/ui/model_picker.lua
+-- Presents a list of locally available Ollama models and updates the
+-- per-buffer selection in state.
+
 local M      = {}
 local state  = require("ai_chat.core.state")
 local config = require("ai_chat.config")
