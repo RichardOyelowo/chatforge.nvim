@@ -1,4 +1,4 @@
-emlocal M = {}
+local M = {}
 
 M.fix = "Fix the following code and explain what was wrong:\n\n```%s\n%s\n```"
 
