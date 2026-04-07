@@ -1,6 +1,3 @@
--- ai_chat/utils/buffer.lua
--- Helpers for reading buffer content and visual selections.
-
 local M = {}
 
 --- Returns all lines from the given buffer (default: current).
