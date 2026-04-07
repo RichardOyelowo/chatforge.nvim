@@ -51,15 +51,18 @@ Optional but worth having:
 
 ```lua
 {
-  dir = "~/.config/nvim/plugins/chatforge",
-  event = "VeryLazy",
-  config = function()
-    require("chatforge").setup({
-      default_model = "llama3",
-      ollama_url    = "http://localhost:11434",
-    })
-  end,
-}
+    "RichardOyelowo/chatforge",
+    event = "VeryLazy",
+    dependencies = {
+      "RichardOyelowo/render-markdown.nvim",  -- required for ChatForge UI
+    },
+    config = function()
+      require("chatforge").setup({
+        default_model = "llama3",
+        ollama_url    = "http://localhost:11434",
+      })
+    end,
+  }
 ```
 
 Drop the folder anywhere in your `runtimepath`. No dependencies outside of Neovim itself and curl.
