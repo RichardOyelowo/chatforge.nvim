@@ -1,6 +1,3 @@
--- ai_chat/utils/logger.lua
--- Debug logging utility. Set debug = true in config to enable.
-
 local M = {}
 
 local _enabled = false
