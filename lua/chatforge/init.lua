@@ -1,7 +1,6 @@
--- Entry point. Call require("chatforge").setup({ ... }) once in your config.
 -- Commands:
 --   :Chat                   open / focus the chat window
---   :ChatSend <message>     send a message (non-interactive)
+--   :ChatSend [message]     no args = prompt, args = send, visual = send selection
 --   :ChatSetModel [model]   set model for current buffer, or open picker
 --   :ChatReset              clear history and reopen
 --   :ChatActivate           activate the action button under the cursor
@@ -29,20 +28,41 @@ function M.setup(opts)
   -- ── :Chat ──────────────────────────────────────────────────────────────
   vim.api.nvim_create_user_command("Chat", function()
     chat.open()
-  end, { desc = "Open AI chat window" })
+  end, { desc = "Open chatforge window" })
 
-  -- ── :ChatSend <message> ───────────────────────────────────────────────
+  -- ── :ChatSend [message] ───────────────────────────────────────────────
+  -- No args      → opens vim.ui.input prompt
+  -- With args    → sends the text directly
+  -- Visual range → wraps selected lines in a code block and sends
   vim.api.nvim_create_user_command("ChatSend", function(cmd)
-    if cmd.args == "" then
-      vim.notify("[chatforge] :ChatSend requires a message.", vim.log.levels.WARN)
+    local src = vim.api.nvim_get_current_buf()
+
+    -- Don't let src be the chat buffer itself
+    if src == state.chat_bufnr then
+      vim.notify(
+        "[chatforge] Switch to your source buffer first, then run :ChatSend.",
+        vim.log.levels.WARN
+      )
       return
     end
-    local src = vim.api.nvim_get_current_buf()
+
+    local input = nil
+
+    if cmd.range > 0 then
+      -- Visual selection — wrap in a fenced code block
+      local lines = vim.api.nvim_buf_get_lines(src, cmd.line1 - 1, cmd.line2, false)
+      local ft    = vim.bo[src].filetype or ""
+      input = string.format("```%s\n%s\n```", ft, table.concat(lines, "\n"))
+    elseif cmd.args ~= "" then
+      input = cmd.args
+    end
+    -- input == nil  →  send_message opens vim.ui.input
+
     chat.open(src)
     vim.defer_fn(function()
-      chat.send_message(src, cmd.args)
-    end, 60)
-  end, { desc = "Send a message to AI chat", nargs = "+" })
+      chat.send_message(src, input)
+    end, 80)
+  end, { desc = "Send a message to chatforge", nargs = "*", range = true })
 
   -- ── :ChatSetModel [model] ─────────────────────────────────────────────
   vim.api.nvim_create_user_command("ChatSetModel", function(cmd)
@@ -59,14 +79,13 @@ function M.setup(opts)
   vim.api.nvim_create_user_command("ChatReset", function()
     local src = vim.api.nvim_get_current_buf()
     chat.open(src)
-    vim.defer_fn(function() chat.reset(src) end, 60)
-  end, { desc = "Reset AI chat history" })
+    vim.defer_fn(function() chat.reset(src) end, 80)
+  end, { desc = "Reset chatforge history" })
 
   -- ── :ChatActivate ─────────────────────────────────────────────────────
-  -- Activate the action button (Accept / Diff / Yank / Preview) under cursor.
   vim.api.nvim_create_user_command("ChatActivate", function()
     chat.activate_cursor_button()
-  end, { desc = "Activate AI chat action button under cursor" })
+  end, { desc = "Activate action button under cursor" })
 
   -- ── :ChatApply [N] ────────────────────────────────────────────────────
   vim.api.nvim_create_user_command("ChatApply", function(cmd)
@@ -90,12 +109,12 @@ function M.setup(opts)
   vim.api.nvim_create_user_command("ChatPreview", function(cmd)
     local n = tonumber(cmd.args) or 1
     floating.preview(n)
-  end, { desc = "Preview pending code block N in floating window", nargs = "?" })
+  end, { desc = "Preview pending code block N in float", nargs = "?" })
 
   -- ── :ChatReject ───────────────────────────────────────────────────────
   vim.api.nvim_create_user_command("ChatReject", function()
     actions.reject_all()
-  end, { desc = "Reject all pending AI code blocks" })
+  end, { desc = "Reject all pending code blocks" })
 
   log.log("chatforge ready  default_model=%s", config.values.default_model)
 end

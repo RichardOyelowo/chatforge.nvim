@@ -51,18 +51,40 @@ Optional but worth having:
 
 ```lua
 {
-    "RichardOyelowo/chatforge",
-    event = "VeryLazy",
-    dependencies = {
-      "RichardOyelowo/render-markdown.nvim",  -- required for ChatForge UI
-    },
-    config = function()
-      require("chatforge").setup({
-        default_model = "llama3",
-        ollama_url    = "http://localhost:11434",
-      })
-    end,
-  }
+  "RichardOyelowo/chatforge.nvim",
+
+  -- Lazy-load on all available Chat commands
+  cmd = {
+    "Chat",
+    "ChatSend",
+    "ChatSetModel",
+    "ChatReset",
+    "ChatActivate",
+    "ChatApply",
+    "ChatDiff",
+    "ChatYank",
+    "ChatPreview",
+    "ChatReject",
+  },
+
+  -- Optional: you can also lazy-load on events instead
+  -- event = "VeryLazy",
+
+  config = function()
+    require("chatforge").setup({
+      ollama_url = "http://localhost:11434",
+      default_model = "qwen3-coder:480b-cloud",   -- matches your defaults
+      max_tokens = 4096,
+      temperature = 0.2,
+      debug = false,
+
+      -- You can customize this if you want different behavior
+      system_prompt = "You are a helpful coding assistant embedded in Neovim. "
+        .. "Be concise. Use fenced code blocks with language tags for all code. "
+        .. "When suggesting file changes, clearly state the filename.",
+    })
+  end,
+}
 ```
 
 Drop the folder anywhere in your `runtimepath`. No dependencies outside of Neovim itself and curl.
