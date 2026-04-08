@@ -55,8 +55,7 @@ function M.append_user(content, model)
     string.format("**You** _(model: %s)_:", model or "?"),
     "",
   }
-  for _, l in ipairs(vim.split(content, "
-")) do
+  for _, l in ipairs(vim.split(content, "")) do
     table.insert(lines, "> " .. l)
   end
   table.insert(lines, "")
@@ -85,8 +84,7 @@ function M.append_segments(segments)
     elseif seg.type == "code" then
       local block_start = #lines  -- 0-based offset within `lines`
       table.insert(lines, "```" .. (seg.lang or ""))
-      for _, l in ipairs(vim.split(seg.content, "
-")) do
+      for _, l in ipairs(vim.split(seg.content, "")) do
         table.insert(lines, l)
       end
       table.insert(lines, "```")
