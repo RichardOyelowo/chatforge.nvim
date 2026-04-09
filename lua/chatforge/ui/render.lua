@@ -13,8 +13,20 @@ end
 local function append(lines)
   local b = state.chat_bufnr
   if not b or not vim.api.nvim_buf_is_valid(b) then return end
+ 
+  -- nvim_buf_set_lines rejects any string that contains \n.
+  -- Flatten the list so every embedded newline becomes a proper table entry.
+  local flat = {}
+  for _, l in ipairs(lines) do
+    -- strip \r so Windows-style \r\n doesn't leave a stray ^M at line end
+    l = l:gsub("\r", "")
+    for _, sub in ipairs(vim.split(l, "\n", { plain = true })) do
+      table.insert(flat, sub)
+    end
+  end
+ 
   vim.api.nvim_buf_set_option(b, "modifiable", true)
-  vim.api.nvim_buf_set_lines(b, -1, -1, false, lines)
+  vim.api.nvim_buf_set_lines(b, -1, -1, false, flat)
   vim.api.nvim_buf_set_option(b, "modifiable", false)
   if state.chat_winnr and vim.api.nvim_win_is_valid(state.chat_winnr) then
     vim.api.nvim_win_set_cursor(state.chat_winnr, { buf_line_count(b), 0 })
@@ -55,7 +67,8 @@ function M.append_user(content, model)
     string.format("**You** _(model: %s)_:", model or "?"),
     "",
   }
-  for _, l in ipairs(vim.split(content, "")) do
+  for _, l in ipairs(vim.split(content, "
+")) do
     table.insert(lines, "> " .. l)
   end
   table.insert(lines, "")
@@ -76,14 +89,16 @@ function M.append_segments(segments)
  
   for _, seg in ipairs(segments) do
     if seg.type == "text" then
-      for _, l in ipairs(vim.split(seg.content, "")) do
+      for _, l in ipairs(vim.split(seg.content, "
+")) do
         table.insert(lines, l)
       end
  
     elseif seg.type == "code" then
       local block_start = #lines  -- 0-based offset within `lines`
       table.insert(lines, "```" .. (seg.lang or ""))
-      for _, l in ipairs(vim.split(seg.content, "")) do
+      for _, l in ipairs(vim.split(seg.content, "
+")) do
         table.insert(lines, l)
       end
       table.insert(lines, "```")
