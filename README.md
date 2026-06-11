@@ -4,10 +4,24 @@ An AI dev assistant that lives inside Neovim. Persistent chat per buffer, Ollama
 
 Most AI plugins give you a one-shot prompt or a floating thing that vanishes. This one stays open, remembers your full conversation per buffer, understands what you're actually trying to do: fix a bug, explain something, look at this directory. It drops the action commands right under every code block so you never have to remember a thing.
 
+## Why This Project Matters
+
+chatforge.nvim is built around the way developers already work in Neovim:
+
+- Chat stays attached to the source buffer you opened it from
+- File and directory context can be injected with `@file` and `@dir`
+- Generated edits are staged before you accept them
+- Diff, apply, and reject actions stay close to the generated code
+- Ollama runs locally by default
+- No global keymaps are forced into your config
+
+The goal is not to replace your editor workflow. The goal is to make AI assistance feel native inside it.
+
 ---
 
 ## Table of Contents
 
+- [Why This Project Matters](#why-this-project-matters)
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Configuration](#configuration)
