@@ -201,8 +201,8 @@ function M.write_header()
       lines = {
         "# chatforge",
         "",
-        "Ask below. Code stays out of chat.",
-        "Apply writes. Reject discards.",
+        "Ask below. Code appears here and stages live in source.",
+        "Accept keeps it. Reject restores it.",
         "",
         "---",
       },
@@ -249,9 +249,10 @@ function M.append_segments(segments)
           suffix = " -> " .. block.target_file
         end
         table.insert(text_parts, string.format("Implementation #%d ready%s.", block_index, suffix))
+        table.insert(text_parts, string.format("Preview: :ChatPreview %d.", block_index))
         table.insert(text_parts, string.format("```%s\n%s\n```", seg.lang or "", seg.content or ""))
         if not staged_hint_rendered then
-          table.insert(text_parts, string.format("Review: :ChatAccept, :ChatReject, :ChatDiff %d, :ChatPreview %d.", block_index, block_index))
+          table.insert(text_parts, string.format("Review staged change: :ChatAccept, :ChatReject, :ChatDiff %d.", block_index))
           staged_hint_rendered = true
           has_actions = true
         end

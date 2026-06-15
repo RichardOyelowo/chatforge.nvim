@@ -96,31 +96,45 @@ end
 local function resolve_at_mentions(input, src_bufnr)
   local injections = {}
   local resolved   = input
+  local placeholders = {}
+  local placeholder_count = 0
+
+  local function hold(block)
+    placeholder_count = placeholder_count + 1
+    local key = "\1CHATFORGE_CONTEXT_" .. tostring(placeholder_count) .. "\1"
+    placeholders[key] = block
+    return key
+  end
+
+  local function current_file_block(path_label)
+    local name    = buf_u.get_name(src_bufnr)
+    local ft      = buf_u.get_filetype(src_bufnr)
+    local content = buf_u.get_content(src_bufnr)
+    table.insert(injections, { tag = "@file", path = path_label or "(current buffer)", ok = true })
+    return hold(string.format("\n\nFile: %s\n```%s\n%s\n```", name ~= "" and name or "(unnamed)", ft, content))
+  end
 
   -- 1. Bare @file with no path: replace before the path-based loop
   --    Pattern: @file not followed by non-whitespace (end of string or space/newline next)
+  resolved = resolved:gsub("(@[fF][iI][lL][eE])(%s*)([%?%!%,%;%:])", function(_, space, punct)
+    return current_file_block("(current buffer)") .. space .. punct
+  end)
   resolved = resolved:gsub("(@[fF][iI][lL][eE])(%s+[%./]?%s*$)", function(tag, _)
     return tag .. " /"  -- normalise to @file / so the path loop handles it
   end)
   resolved = resolved:gsub("(@[fF][iI][lL][eE])%s*$", function(_)
     -- bare @file at very end of string
-    local name    = buf_u.get_name(src_bufnr)
-    local ft      = buf_u.get_filetype(src_bufnr)
-    local content = buf_u.get_content(src_bufnr)
-    table.insert(injections, { tag = "@file", path = "(current buffer)", ok = true })
-    return string.format("\n\nFile: %s\n```%s\n%s\n```", name ~= "" and name or "(unnamed)", ft, content)
+    return current_file_block("(current buffer)")
   end)
 
   -- 2. @file <path>: path ends at whitespace or end of string
   for tag, path in resolved:gmatch("(@[fF][iI][lL][eE]%s+(%S+))") do
     local block
-    if is_current_file_ref(path) then
+    if path:match("^[%?%!%,%;%:]$") then
+      block = current_file_block("(current buffer)") .. " " .. path
+    elseif is_current_file_ref(path) then
       -- / or . → inject current buffer content (in-memory, not read from disk)
-      local name    = buf_u.get_name(src_bufnr)
-      local ft      = buf_u.get_filetype(src_bufnr)
-      local content = buf_u.get_content(src_bufnr)
-      block = string.format("\n\nFile: %s\n```%s\n%s\n```", name ~= "" and name or "(unnamed)", ft, content)
-      table.insert(injections, { tag = "@file", path = path .. " (current buffer)", ok = true })
+      block = current_file_block(path .. " (current buffer)")
     else
       -- explicit path: read from disk exactly as written
       local contents, err = read_file(path)
@@ -128,7 +142,7 @@ local function resolve_at_mentions(input, src_bufnr)
         block = "\n<!-- @file " .. path .. " could not be read: " .. err .. " -->"
       else
         local ft = vim.filetype.match({ filename = path }) or ""
-        block = string.format("\n\nFile: %s\n```%s\n%s\n```", path, ft, contents)
+        block = hold(string.format("\n\nFile: %s\n```%s\n%s\n```", path, ft, contents))
         table.insert(injections, { tag = "@file", path = path, ok = true })
       end
     end
@@ -142,10 +156,14 @@ local function resolve_at_mentions(input, src_bufnr)
       local msg = "\n<!-- @dir " .. path .. " could not be read: " .. err .. " -->"
       resolved = resolved:gsub(vim.pesc(tag), msg, 1)
     else
-      local block = string.format("\n\n```\n%s\n```", listing)
+      local block = hold(string.format("\n\n```\n%s\n```", listing))
       resolved = resolved:gsub(vim.pesc(tag), block, 1)
       table.insert(injections, { tag = "@dir", path = path, ok = true })
     end
+  end
+
+  for key, block in pairs(placeholders) do
+    resolved = resolved:gsub(vim.pesc(key), block)
   end
 
   return resolved, injections
