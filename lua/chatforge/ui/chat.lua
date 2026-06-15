@@ -488,7 +488,27 @@ local function send_from_input()
     return
   end
 
-  if do_send(state.source_bufnr or vim.api.nvim_get_current_buf(), input) then
+  local src = state.source_bufnr
+  if not src or not vim.api.nvim_buf_is_valid(src) or state.is_plugin_buf(src) then
+    src = nil
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+      local candidate = vim.api.nvim_win_get_buf(win)
+      if not state.is_plugin_buf(candidate) and vim.bo[candidate].buftype == "" then
+        src = candidate
+        state.source_bufnr = candidate
+        state.source_winnr = win
+        break
+      end
+    end
+  end
+
+  if not src then
+    vim.notify("[chatforge] Open a source buffer before sending.", vim.log.levels.WARN)
+    focus_input()
+    return
+  end
+
+  if do_send(src, input) then
     clear_input()
   end
 end

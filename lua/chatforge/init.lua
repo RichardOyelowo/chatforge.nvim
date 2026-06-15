@@ -6,6 +6,7 @@
 --   :ChatApply [N]          accept staged implementation N
 --   :ChatAccept             accept the first staged implementation
 --   :ChatDiff  [N]          diff block N against current buffer
+--   :ChatPreview [N]       preview staged implementation N
 --   :ChatReject             discard all pending blocks
 --   :ChatBackend <cmd>      manage local backend helpers
  
@@ -141,6 +142,10 @@ function M.setup(opts)
   vim.api.nvim_create_user_command("ChatReviewDiff", function()
     actions.diff_current()
   end, { desc = "Diff the first staged implementation" })
+
+  vim.api.nvim_create_user_command("ChatPreview", function(cmd)
+    actions.preview(tonumber(cmd.args) or 1)
+  end, { desc = "Preview pending implementation N", nargs = "?" })
 
   vim.api.nvim_create_user_command("ChatNextChange", function()
     actions.jump_next()

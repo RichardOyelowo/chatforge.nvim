@@ -502,6 +502,61 @@ function M.apply_to_file(idx, fpath)
   end)
 end
 
+function M.preview(idx)
+  local block = state.pending_blocks[idx]
+  if not block then
+    vim.notify("[chatforge] No pending implementation #" .. idx .. ".", vim.log.levels.WARN)
+    return
+  end
+
+  local width = math.max(math.floor(vim.o.columns * 0.72), 50)
+  local height = math.max(math.floor(vim.o.lines * 0.62), 16)
+  local row = math.floor((vim.o.lines - height) / 2)
+  local col = math.floor((vim.o.columns - width) / 2)
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.bo[bufnr].buftype = "nofile"
+  vim.bo[bufnr].bufhidden = "wipe"
+  vim.bo[bufnr].swapfile = false
+  vim.bo[bufnr].filetype = block.lang or vim.bo[block.target_bufnr or 0].filetype or ""
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, vim.split(block.content or "", "\n", { plain = true }))
+
+  local winnr = vim.api.nvim_open_win(bufnr, true, {
+    relative = "editor",
+    row = row,
+    col = col,
+    width = width,
+    height = height,
+    style = "minimal",
+    border = "rounded",
+    title = " ChatPreview " .. idx .. " ",
+    title_pos = "center",
+  })
+
+  local opts = { noremap = true, silent = true, buffer = bufnr }
+  vim.keymap.set("n", "q", function()
+    if vim.api.nvim_win_is_valid(winnr) then
+      vim.api.nvim_win_close(winnr, true)
+    end
+  end, opts)
+  vim.keymap.set("n", "<Esc>", function()
+    if vim.api.nvim_win_is_valid(winnr) then
+      vim.api.nvim_win_close(winnr, true)
+    end
+  end, opts)
+  vim.keymap.set("n", "a", function()
+    if vim.api.nvim_win_is_valid(winnr) then
+      vim.api.nvim_win_close(winnr, true)
+    end
+    M.accept_current()
+  end, opts)
+  vim.keymap.set("n", "r", function()
+    if vim.api.nvim_win_is_valid(winnr) then
+      vim.api.nvim_win_close(winnr, true)
+    end
+    M.reject_all()
+  end, opts)
+end
+
 --- Open a diff between block N and the current buffer in a new tab.
 ---@param idx number
 function M.diff_with_current(idx)

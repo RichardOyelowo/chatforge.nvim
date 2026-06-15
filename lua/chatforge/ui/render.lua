@@ -68,19 +68,7 @@ local function wrap_line(line, width)
 end
 
 local function chat_safe_text(content)
-  local out = {}
-  local in_code = false
-  for _, line in ipairs(split_lines(content)) do
-    if line:match("^```") then
-      if not in_code then
-        table.insert(out, "[code hidden from chat pane]")
-      end
-      in_code = not in_code
-    elseif not in_code then
-      table.insert(out, line)
-    end
-  end
-  return table.concat(out, NL)
+  return tostring(content or "")
 end
 
 local function set_lines(lines)
@@ -167,9 +155,17 @@ message_lines = function(content, opts)
   local max_width = math.max(math.floor(full_width * 0.78), 28)
   local width = math.min(max_width, opts.width or max_width)
   local body = {}
+  local in_code = false
   for _, line in ipairs(split_lines(chat_safe_text(content))) do
-    for _, wrapped in ipairs(wrap_line(line, width)) do
-      table.insert(body, wrapped)
+    if line:match("^```") then
+      in_code = not in_code
+      table.insert(body, line)
+    elseif in_code then
+      table.insert(body, line)
+    else
+      for _, wrapped in ipairs(wrap_line(line, width)) do
+        table.insert(body, wrapped)
+      end
     end
   end
 
@@ -245,18 +241,17 @@ function M.append_segments(segments)
       n_blocks = n_blocks + 1
       local block = state.pending_blocks[block_index]
       if block and block.stageable == false then
-        table.insert(text_parts, string.format(
-          "Example code #%d was hidden from chat. Ask for an edit, fix, refactor, or selected-range rewrite to stage changes in the file.",
-          block_index
-        ))
+        table.insert(text_parts, string.format("Example code #%d:", block_index))
+        table.insert(text_parts, string.format("```%s\n%s\n```", seg.lang or "", seg.content or ""))
       else
         local suffix = ""
         if block and block.target_file then
           suffix = " -> " .. block.target_file
         end
         table.insert(text_parts, string.format("Implementation #%d ready%s.", block_index, suffix))
+        table.insert(text_parts, string.format("```%s\n%s\n```", seg.lang or "", seg.content or ""))
         if not staged_hint_rendered then
-          table.insert(text_parts, string.format("Review: :ChatAccept, :ChatReject, :ChatDiff %d.", block_index))
+          table.insert(text_parts, string.format("Review: :ChatAccept, :ChatReject, :ChatDiff %d, :ChatPreview %d.", block_index, block_index))
           staged_hint_rendered = true
           has_actions = true
         end
