@@ -345,6 +345,8 @@ local function do_send(src_bufnr, input)
         target_bufnr = src_bufnr,
         target_file = explicit_target_file,
         action = dispatched.action,
+        model = model,
+        prompt_summary = input,
       },
     }
   end
@@ -432,6 +434,8 @@ local function do_send(src_bufnr, input)
             target_bufnr = src_bufnr,
             target_file = explicit_target_file,
             action = parsed_action.action,
+            model = model,
+            prompt_summary = input,
           })
         else
           stream.block.lang = seg.lang

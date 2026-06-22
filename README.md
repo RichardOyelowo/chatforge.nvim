@@ -312,6 +312,8 @@ See the [staged apply, diff, and reject demo](images/demo-staged-apply-diff-reje
 
 **`:ChatReject`** restores the original source lines and removes the staged implementation.
 
+If you edit the buffer after ChatForge stages a proposal, Accept and Reject stop instead of overwriting your newer work. Use `:ChatDiff N` to review the stale proposal.
+
 **`:ChatNextChange`** and **`:ChatPrevChange`** jump around the staged change.
 
 Block numbers are just the order they appeared in the response. First code block is 1, second is 2. Apply only accepts a block that has been staged into the source buffer.

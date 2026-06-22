@@ -126,7 +126,9 @@ Staging modifies the in-memory Neovim buffer so the proposed code is visible
 where it will land. Highlighted lines and an "AI" marker identify the proposal.
 
 Accepting keeps the staged lines and writes the source buffer. Rejecting restores
-the original snapshot. Review pending work before sending another request.
+the original snapshot. If the buffer changes after staging, both operations stop
+and direct you to |:ChatDiff| instead of overwriting the newer edits. Review
+pending work before sending another request.
 
 =============================================================================
 KEYMAPS                                                 *chatforge-keymaps*

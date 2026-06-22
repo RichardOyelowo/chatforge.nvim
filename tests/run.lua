@@ -139,12 +139,48 @@ test("streamed staging changes the live buffer and reject restores it", function
   local change = actions.finish_stream_preview()
 
   truthy(change, "stream preview should produce staged metadata")
+  truthy(change.id and change.id ~= "", "staged change should have an id")
+  equal(change.status, "pending")
+  equal(change.original_lines, { "local value = 1" })
+  equal(change.proposed_lines, { "local value = 2" })
+  truthy(change.staged_changedtick, "staged changedtick should be recorded")
   equal(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), { "local value = 2" })
   truthy(state.staged_changes[1], "change should remain pending")
 
   actions.reject_all()
   equal(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), { "local value = 1" })
   equal(state.staged_changes, {})
+end)
+
+test("reject refuses to overwrite edits made after staging", function()
+  local state = reset_state()
+  local actions = require("chatforge.core.actions")
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "local value = 1" })
+  state.source_bufnr = bufnr
+  state.pending_blocks = {
+    {
+      content = "local value = 2",
+      lang = "lua",
+      target_bufnr = bufnr,
+      stageable = true,
+      model = "test-model",
+      prompt_summary = "change the value",
+    },
+  }
+
+  truthy(actions.start_stream_preview(1, state.pending_blocks[1]))
+  actions.append_stream_preview("local value = 2\n")
+  actions.finish_stream_preview()
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "local user_edit = 3" })
+
+  actions.accept_current()
+  equal(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), { "local user_edit = 3" })
+  truthy(state.staged_changes[1], "stale proposal must not be accepted")
+
+  actions.reject_all()
+  equal(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), { "local user_edit = 3" })
+  truthy(state.staged_changes[1], "stale proposal should remain available for review")
 end)
 
 if #failures > 0 then

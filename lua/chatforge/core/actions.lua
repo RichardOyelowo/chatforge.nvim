@@ -173,6 +173,48 @@ local function clear_proposed_highlight(change)
   end
 end
 
+local function prompt_summary(block)
+  local summary = block and block.prompt_summary or ""
+  summary = summary:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+  return summary:sub(1, 120)
+end
+
+local function staged_metadata(block, bufnr, start_idx, end_idx, original, proposed, original_changedtick)
+  return {
+    id = string.format("%d-%d-%d", os.time(), bufnr, math.random(100000, 999999)),
+    bufnr = bufnr,
+    buffer = bufnr,
+    file_path = vim.api.nvim_buf_get_name(bufnr),
+    original_changedtick = original_changedtick,
+    staged_changedtick = vim.api.nvim_buf_get_changedtick(bufnr),
+    original_lines = vim.deepcopy(original),
+    proposed_lines = vim.deepcopy(proposed),
+    original = original,
+    start_idx = start_idx,
+    end_idx = end_idx,
+    start_line = start_idx + 1,
+    end_line = start_idx + math.max(#proposed, 1),
+    new_line_count = #proposed,
+    target = block and block.target or nil,
+    timestamp = os.time(),
+    model = block and block.model or nil,
+    prompt_summary = prompt_summary(block),
+    status = "pending",
+  }
+end
+
+local function is_stale(change)
+  return change.staged_changedtick
+    and vim.api.nvim_buf_is_valid(change.bufnr)
+    and vim.api.nvim_buf_get_changedtick(change.bufnr) ~= change.staged_changedtick
+end
+
+local function report_stale(idx)
+  local message = "Implementation #" .. idx .. " is stale because the buffer changed after staging. Review it with :ChatDiff " .. idx .. "."
+  render.append_status(message, "error")
+  vim.notify("[chatforge] " .. message, vim.log.levels.WARN)
+end
+
 local function first_staged_idx()
   local best = nil
   for idx in pairs(state.staged_changes) do
@@ -204,6 +246,7 @@ local function write_lines_live(bufnr, lines, target, opts, on_done)
   vim.bo[bufnr].modifiable = true
   local start_idx = target and target.line1 and (target.line1 - 1) or 0
   local end_idx = target and target.line2 or -1
+  local original_changedtick = vim.api.nvim_buf_get_changedtick(bufnr)
   local original = vim.api.nvim_buf_get_lines(bufnr, start_idx, end_idx, false)
   vim.api.nvim_buf_set_lines(bufnr, start_idx, end_idx, false, {})
 
@@ -255,14 +298,8 @@ local function write_lines_live(bufnr, lines, target, opts, on_done)
       state.applying = false
       render.remove_last_status()
       if on_done then
-        on_done({
-          bufnr = bufnr,
-          start_idx = start_idx,
-          end_idx = end_idx,
-          new_line_count = #lines,
-          original = original,
-          target = target,
-        })
+        local block = state.pending_blocks[opts.block_index or 1]
+        on_done(staged_metadata(block, bufnr, start_idx, end_idx, original, lines, original_changedtick))
       end
     end
   end
@@ -307,6 +344,7 @@ function M.start_stream_preview(idx, block)
 
   local start_idx = target and target.line1 and (target.line1 - 1) or 0
   local end_idx = target and target.line2 or -1
+  local original_changedtick = vim.api.nvim_buf_get_changedtick(bufnr)
   local original = vim.api.nvim_buf_get_lines(bufnr, start_idx, end_idx, false)
   vim.api.nvim_buf_set_lines(bufnr, start_idx, end_idx, false, {})
 
@@ -318,6 +356,7 @@ function M.start_stream_preview(idx, block)
     end_idx = end_idx,
     insert_at = start_idx,
     original = original,
+    original_changedtick = original_changedtick,
     target = target,
     was_modifiable = was_modifiable,
     pending = "",
@@ -363,14 +402,15 @@ function M.finish_stream_preview()
   end
 
   vim.bo[stream.bufnr].modifiable = stream.was_modifiable
-  local change = {
-    bufnr = stream.bufnr,
-    start_idx = stream.start_idx,
-    end_idx = stream.end_idx,
-    new_line_count = #stream.lines,
-    original = stream.original,
-    target = stream.target,
-  }
+  local change = staged_metadata(
+    stream.block,
+    stream.bufnr,
+    stream.start_idx,
+    stream.end_idx,
+    stream.original,
+    stream.lines,
+    stream.original_changedtick
+  )
   add_proposed_highlight(stream.bufnr, stream.start_idx, #stream.lines, changed_line_marks(stream.original, stream.lines))
   state.staged_changes[stream.idx] = change
   state.streaming_change = nil
@@ -389,11 +429,16 @@ function M.apply_to_current(idx)
 
   local staged = state.staged_changes[idx]
   if staged then
+    if is_stale(staged) then
+      report_stale(idx)
+      return
+    end
     if not write_buffer_to_disk(staged.bufnr) then
       render.append_status("Could not write implementation #" .. idx .. ".")
       return
     end
     clear_proposed_highlight(staged)
+    staged.status = "accepted"
     state.staged_changes[idx] = nil
     if state.pending_blocks[idx] then
       state.pending_blocks[idx].applied = true
@@ -468,7 +513,7 @@ function M.stage_preview(idx)
   end
 
   local target = block_target(idx, bufnr)
-  write_lines_live(bufnr, lines, target, { highlight = true }, function(change)
+  write_lines_live(bufnr, lines, target, { highlight = true, block_index = idx }, function(change)
     state.staged_changes[idx] = change
     render.append_status("Implementation #" .. idx .. " staged. Use :ChatAccept, :ChatReject, or :ChatDiff.")
     log.log("stage_preview: block=%d bufnr=%d", idx, bufnr)
@@ -612,8 +657,12 @@ function M.reject_all()
     return
   end
 
+  local retained = {}
   for idx, change in pairs(state.staged_changes) do
-    if change.bufnr and vim.api.nvim_buf_is_valid(change.bufnr) then
+    if is_stale(change) then
+      retained[idx] = change
+      report_stale(idx)
+    elseif change.bufnr and vim.api.nvim_buf_is_valid(change.bufnr) then
       local was_modifiable = vim.bo[change.bufnr].modifiable
       vim.bo[change.bufnr].modifiable = true
       vim.api.nvim_buf_set_lines(
@@ -624,17 +673,22 @@ function M.reject_all()
         change.original
       )
       vim.bo[change.bufnr].modifiable = was_modifiable
+      change.status = "rejected"
       clear_proposed_highlight(change)
     end
-    if state.pending_blocks[idx] then
+    if not retained[idx] and state.pending_blocks[idx] then
       state.pending_blocks[idx].applied = false
     end
   end
-  state.pending_blocks = {}
-  state.staged_changes = {}
+  state.staged_changes = retained
+  if next(retained) == nil then
+    state.pending_blocks = {}
+  end
   state.edit_target = nil
-  render.append_status("Rejected pending implementation.")
-  vim.notify("[chatforge] All pending changes rejected.", vim.log.levels.INFO)
+  if next(retained) == nil then
+    render.append_status("Rejected pending implementation.")
+    vim.notify("[chatforge] All pending changes rejected.", vim.log.levels.INFO)
+  end
 end
 
 return M
