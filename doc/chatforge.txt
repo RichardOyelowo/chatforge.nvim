@@ -1,0 +1,188 @@
+*chatforge.txt*  Local-first, staged AI coding chat for Neovim
+
+=============================================================================
+CONTENTS                                                    *chatforge-contents*
+
+1. Introduction                                      |chatforge|
+2. Setup                                             |chatforge-setup|
+3. Commands                                          |chatforge-commands|
+4. Context references                                |chatforge-context|
+5. Staged edits                                      |chatforge-staged-edits|
+6. Keymaps                                           |chatforge-keymaps|
+7. Configuration                                     |chatforge-config|
+8. Health and troubleshooting                        |chatforge-health|
+
+=============================================================================
+INTRODUCTION                                                *chatforge*
+
+ChatForge attaches a conversation to each source buffer. It sends requests to
+Ollama, shows Markdown responses in a right-side chat, and stages requested
+edits directly in the live source buffer. Staged edits remain highlighted until
+you accept or reject them.
+
+ChatForge does not define global keymaps. It does not silently accept staged
+changes.
+
+Requirements:
+
+- Neovim 0.10 or newer
+- curl
+- Ollama for the default backend
+
+=============================================================================
+SETUP                                                   *chatforge-setup*
+
+Minimal setup: >lua
+
+  require("chatforge").setup({
+    default_model = "llama3",
+    ollama_url = "http://localhost:11434",
+  })
+<
+Run |:checkhealth| after setup: >vim
+
+  :checkhealth chatforge
+<
+=============================================================================
+COMMANDS                                               *chatforge-commands*
+
+                                                    *:Chat*
+:Chat               Open or focus the chat panel for the current source buffer.
+
+                                                    *:ChatSend*
+:ChatSend [message]  With a message, send it immediately. Without a message,
+                     focus the input pane. A visual range sends that selection.
+
+                                                    *:ChatModel*
+:ChatModel [model]   Set the model for this source buffer. Without an argument,
+                     prompt for a model.
+
+                                                    *:ChatReset*
+:ChatReset           Clear the current source buffer's conversation.
+
+                                                    *:ChatPreview*
+:ChatPreview [N]     Preview generated code block N. The default is 1.
+
+                                                    *:ChatDiff*
+:ChatDiff [N]        Compare generated block N with its source buffer snapshot.
+
+                                                    *:ChatReviewDiff*
+:ChatReviewDiff      Compare the first staged implementation.
+
+                                                    *:ChatAccept*
+:ChatAccept          Accept the first staged implementation.
+
+                                                    *:ChatApply*
+:ChatApply [N]       Accept implementation N and write its source buffer.
+
+                                                    *:ChatReject*
+:ChatReject          Restore original lines and discard all staged changes.
+
+                                                    *:ChatNextChange*
+:ChatNextChange      Jump to the end of the staged change.
+
+                                                    *:ChatPrevChange*
+:ChatPrevChange      Jump to the start of the staged change.
+
+                                                    *:ChatBackend*
+:ChatBackend status  Show managed Ollama jobs.
+:ChatBackend start   Start a managed Ollama server.
+:ChatBackend stop    Stop managed Ollama jobs.
+
+=============================================================================
+CONTEXT REFERENCES                                     *chatforge-context*
+
+Context is explicit. Bare references use the current editor state:
+
+  @file                   Current live Neovim buffer
+  @dir                    Current working directory listing
+
+Named references use braces. Braces keep normal prose from being mistaken for
+a path and allow spaces inside paths:
+
+  @{file lua/app.lua}     Named file
+  @{dir lua/chatforge}    Named directory
+
+Examples: >vim
+
+  :ChatSend can you review @file fully?
+  :ChatSend compare @{file old.lua} with @{file new.lua}
+  :ChatSend explain @{dir lua/chatforge}
+<
+Named paths are resolved from Neovim's current working directory. `~` and
+environment variables are expanded for files. Directory listings are one level
+deep.
+
+Context blocks sent to the model are labelled as accessible, user-provided
+editor content. Tokens found inside injected source code are not expanded.
+
+=============================================================================
+STAGED EDITS                                       *chatforge-staged-edits*
+
+Requests beginning with "fix", "refactor", or "edit file" can stage generated
+code. Visual-selection rewrites are also staged.
+
+Staging modifies the in-memory Neovim buffer so the proposed code is visible
+where it will land. Highlighted lines and an "AI" marker identify the proposal.
+
+Accepting keeps the staged lines and writes the source buffer. Rejecting restores
+the original snapshot. Review pending work before sending another request.
+
+=============================================================================
+KEYMAPS                                                 *chatforge-keymaps*
+
+ChatForge defines no global keymaps. Add only the mappings you want: >lua
+
+  vim.keymap.set("n", "<leader>aa", "<cmd>ChatAccept<cr>")
+  vim.keymap.set("n", "<leader>ar", "<cmd>ChatReject<cr>")
+  vim.keymap.set("n", "<leader>ad", "<cmd>ChatReviewDiff<cr>")
+<
+The input pane uses buffer-local mappings. Enter sends, and CTRL-J inserts a
+newline.
+
+=============================================================================
+CONFIGURATION                                           *chatforge-config*
+
+All fields are optional: >lua
+
+  require("chatforge").setup({
+    default_model = "llama3",
+    ollama_url = "http://localhost:11434",
+    max_output_tokens = 2048,
+    context_tokens = 64000,
+    temperature = 0.2,
+    debug = false,
+    highlights = {
+      diff = { incoming = "ChatforgeProposedChange" },
+    },
+    system_prompt = "You are a helpful coding assistant embedded in Neovim...",
+  })
+<
+`default_model` is copied into each new per-buffer session. `debug` enables
+ChatForge notifications useful during troubleshooting.
+
+render-markdown.nvim and dressing.nvim are optional. ChatForge does not install
+or require them.
+
+=============================================================================
+HEALTH AND TROUBLESHOOTING                               *chatforge-health*
+
+Run: >vim
+
+  :checkhealth chatforge
+<
+The health check reports the Neovim version, curl availability, configuration,
+state-directory permissions, Ollama reachability, default model availability,
+and optional UI dependencies.
+
+If Ollama is unavailable:
+
+  ollama serve
+
+If the configured model is missing:
+
+  ollama pull <model>
+
+Paths in named context references are relative to |:pwd|.
+
+vim:tw=78:ts=8:noet:ft=help:norl:
