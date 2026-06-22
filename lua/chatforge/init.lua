@@ -11,6 +11,8 @@
 --   :ChatBackend <cmd>      manage local backend helpers
  
 local M = {}
+
+M.version = "0.1.0"
  
 function M.setup(opts)
   local config  = require("chatforge.config")

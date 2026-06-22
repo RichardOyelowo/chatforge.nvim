@@ -1,8 +1,16 @@
 # <img src="images/chatforge_logo.svg">
 
-An AI dev assistant that lives inside Neovim. Persistent chat per buffer, Ollama backend, code actions, file and directory injection, per-buffer model switching. No global keymaps forced on you.
+Local-first, staged AI coding chat for Neovim.
 
-Most AI plugins give you a one-shot prompt or a floating thing that vanishes. This one stays open, remembers your full conversation per buffer, understands what you're actually trying to do: fix a bug, explain something, look at this directory. It drops the action commands right under every code block so you never have to remember a thing.
+- Persistent chat per source buffer
+- Ollama by default, with no API key required
+- Explicit `@file`, `@dir`, `@{file path}`, and `@{dir path}` context
+- Generated code shown in chat and staged in the live source buffer
+- Diff, preview, accept, and reject commands
+- Changed-buffer protection before Accept or Reject
+- No global keymaps
+
+ChatForge is opinionated about one workflow: generated edits appear where they will land, remain visibly marked, and stay reversible until you review them.
 
 ## Why This Project Matters
 
@@ -17,11 +25,18 @@ chatforge.nvim is built around the way developers already work in Neovim:
 
 The goal is not to replace your editor workflow. The goal is to make AI assistance feel native inside it.
 
+## Project Status
+
+ChatForge v0.1 focuses on the reliable local edit loop: Ollama chat, per-buffer sessions, explicit context, streaming single-buffer proposals, and staged review. Multi-file patches and additional providers are not part of this release.
+
+Run `:checkhealth chatforge` after installation. Full editor documentation is available at `:help chatforge`.
+
 ---
 
 ## Table of Contents
 
 - [Why This Project Matters](#why-this-project-matters)
+- [Project Status](#project-status)
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Configuration](#configuration)
@@ -63,7 +78,9 @@ Optional but worth having:
 
   cmd = {
     "Chat", "ChatSend", "ChatModel", "ChatReset",
-    "ChatApply", "ChatDiff", "ChatReject", "ChatBackend",
+    "ChatApply", "ChatAccept", "ChatDiff", "ChatReviewDiff",
+    "ChatPreview", "ChatReject", "ChatNextChange", "ChatPrevChange",
+    "ChatBackend",
   },
 
   config = function()
@@ -160,7 +177,7 @@ See the [overview demo](images/demo-overview.webm) for the normal layout: source
 
 Conversation is stored per source buffer. Whichever buffer you had open when you ran `:Chat` owns that session. Open a chat from `init.lua` and another from `server.go`, and they each get their own history and model selection. Nothing bleeds between them.
 
-Generated code stays out of the chat pane. If the response is meant to change a file, chatforge stages the code in the source buffer and highlights the proposed edit there. The chat pane shows the commands available for that response.
+Generated code remains visible in the chat pane. If the response is meant to change a file, ChatForge also stages the code in the source buffer and highlights the proposed edit there. The chat pane shows the commands available for that response.
 
 ---
 
