@@ -1,0 +1,159 @@
+local failures = {}
+local passed = 0
+
+local function fail(message)
+  error(message, 2)
+end
+
+local function equal(actual, expected, message)
+  if not vim.deep_equal(actual, expected) then
+    fail(string.format(
+      "%s\nexpected: %s\nactual:   %s",
+      message or "values differ",
+      vim.inspect(expected),
+      vim.inspect(actual)
+    ))
+  end
+end
+
+local function truthy(value, message)
+  if not value then
+    fail(message or "expected a truthy value")
+  end
+end
+
+local function test(name, fn)
+  local ok, err = xpcall(fn, debug.traceback)
+  if ok then
+    passed = passed + 1
+    print("ok - " .. name)
+  else
+    table.insert(failures, name .. "\n" .. err)
+    print("not ok - " .. name)
+  end
+end
+
+local function reset_state()
+  local state = require("chatforge.core.state")
+  state.buffers = {}
+  state.chat_bufnr = nil
+  state.chat_winnr = nil
+  state.input_bufnr = nil
+  state.input_winnr = nil
+  state.source_bufnr = nil
+  state.source_winnr = nil
+  state.chat_source_bufnr = nil
+  state.chat_entries = {}
+  state.pending_blocks = {}
+  state.staged_changes = {}
+  state.streaming_change = nil
+  state.edit_target = nil
+  state.applying = false
+  state.loading = false
+  return state
+end
+
+require("chatforge.config").setup({ default_model = "test-model" })
+
+test("parser keeps text and indexes multiple fenced blocks", function()
+  local parser = require("chatforge.core.parser")
+  local segments = parser.parse("First\n```lua\na = 1\n```\nSecond\n```js\nb = 2\n```")
+  local blocks = parser.extract_code_blocks("```lua\na = 1\n```\n```js\nb = 2\n```")
+
+  equal(#blocks, 2, "two code blocks should be extracted")
+  equal(blocks[1].index, 1)
+  equal(blocks[2].index, 2)
+  equal(blocks[1].content, "a = 1")
+  equal(blocks[2].lang, "js")
+  truthy(segments[1].content:find("First", 1, true), "leading text should remain")
+end)
+
+test("bare @file injects the live buffer without consuming prose", function()
+  local dispatcher = require("chatforge.core.dispatcher")
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_name(bufnr, vim.fn.tempname() .. ".lua")
+  vim.bo[bufnr].filetype = "lua"
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "local live = true" })
+
+  local prompt = dispatcher.dispatch("can you see @file fully?", bufnr).prompt
+  truthy(prompt:find("local live = true", 1, true), "live buffer content should be injected")
+  truthy(prompt:find("fully?", 1, true), "prose after @file should remain")
+  truthy(not prompt:find("fully? could not be read", 1, true), "prose must not become a path")
+  truthy(prompt:find("accessible user%-provided code"), "context should be labelled for the model")
+end)
+
+test("named file context uses braced syntax and supports spaces", function()
+  local dispatcher = require("chatforge.core.dispatcher")
+  local path = vim.fn.tempname() .. " named.lua"
+  vim.fn.writefile({ "local named = true" }, path)
+
+  local prompt = dispatcher.dispatch("review @{file " .. path .. "} please", vim.api.nvim_get_current_buf()).prompt
+  truthy(prompt:find("local named = true", 1, true), "named file content should be injected")
+  truthy(prompt:find("please", 1, true), "text after named context should remain")
+  truthy(not prompt:find("CHATFORGE_CONTEXT", 1, true), "internal placeholders must not leak")
+  vim.fn.delete(path)
+end)
+
+test("injected source is not recursively parsed for context tokens", function()
+  local dispatcher = require("chatforge.core.dispatcher")
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "-- example: @{file missing.lua}", "return true" })
+
+  local prompt = dispatcher.dispatch("review @file", bufnr).prompt
+  truthy(prompt:find("@{file missing.lua}", 1, true), "source token should remain literal")
+  truthy(not prompt:find("missing.lua} could not be read", 1, true), "injected source must not be expanded")
+end)
+
+test("sessions remain isolated by source buffer", function()
+  local state = reset_state()
+  local first = vim.api.nvim_create_buf(false, true)
+  local second = vim.api.nvim_create_buf(false, true)
+
+  state.append_message(first, "user", "first")
+  state.append_message(second, "user", "second")
+  state.set_model(first, "model-a")
+
+  equal(state.get_buf(first).history[1].content, "first")
+  equal(state.get_buf(second).history[1].content, "second")
+  equal(state.get_model(first), "model-a")
+  equal(state.get_model(second), "test-model")
+end)
+
+test("streamed staging changes the live buffer and reject restores it", function()
+  local state = reset_state()
+  local actions = require("chatforge.core.actions")
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "local value = 1" })
+  state.source_bufnr = bufnr
+  state.pending_blocks = {
+    {
+      content = "local value = 2",
+      lang = "lua",
+      target_bufnr = bufnr,
+      stageable = true,
+    },
+  }
+
+  truthy(actions.start_stream_preview(1, state.pending_blocks[1]), "stream preview should start")
+  actions.append_stream_preview("local value = 2\n")
+  local change = actions.finish_stream_preview()
+
+  truthy(change, "stream preview should produce staged metadata")
+  equal(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), { "local value = 2" })
+  truthy(state.staged_changes[1], "change should remain pending")
+
+  actions.reject_all()
+  equal(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), { "local value = 1" })
+  equal(state.staged_changes, {})
+end)
+
+if #failures > 0 then
+  print(string.format("\n%d passed, %d failed", passed, #failures))
+  for _, failure in ipairs(failures) do
+    print("\n" .. failure)
+  end
+  vim.cmd("cquit 1")
+else
+  print(string.format("\n%d passed, 0 failed", passed))
+  vim.cmd("qa!")
+end

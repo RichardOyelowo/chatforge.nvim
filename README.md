@@ -418,6 +418,18 @@ Then in `api/client.lua` change `backends.get("ollama")` to read from `config.va
 
 ---
 
+## Development
+
+Run the dependency-free test suite with Neovim 0.10 or newer:
+
+```sh
+nvim --headless -n -i NONE -u tests/minimal_init.lua -l tests/run.lua
+```
+
+The same suite runs in GitHub Actions for every push and pull request.
+
+---
+
 ## Troubleshooting
 
 **`Ollama unreachable`**
