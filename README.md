@@ -180,52 +180,58 @@ Plain chat and example requests do not modify files. If the model returns exampl
 
 ## Working With Files and Directories
 
-This is where chatforge gets a lot more useful than just a chat window. You can pull any file or directory listing directly into your message using `@file` and `@dir`. chatforge reads them off disk and injects their contents into the prompt before it goes to the model.
+This is where chatforge gets a lot more useful than just a chat window. Use bare `@file` for the current live buffer and `@dir` for the current working directory. Use `@{file path}` or `@{dir path}` when you need a named path.
 
-The input box can complete `@file` and `@dir` paths for you. See the [context completion demo](images/demo-context-completion.webm).
+The input box completes the braced forms for you. See the [context completion demo](images/demo-context-completion.webm).
 
 ### @file: pull a file into the conversation
 
 The basic idea: anywhere you'd normally have to paste code or describe what's in a file, just reference it directly.
 
 ```
-:ChatSend explain @file lua/chatforge/core/parser.lua
+:ChatSend explain @{file lua/chatforge/core/parser.lua}
 ```
 
 chatforge reads `parser.lua`, wraps it in a fenced code block with the correct filetype, and injects it into the prompt. The model sees the actual file contents, not a description of it.
 
 ```
-:ChatSend there's a bug somewhere in @file src/auth/middleware.go can you find it
+:ChatSend there's a bug somewhere in @{file src/auth/middleware.go} can you find it
 ```
 
 ```
-:ChatSend @file config/database.yml is there anything wrong with this config
+:ChatSend @{file config/database.yml} is there anything wrong with this config
 ```
 
-The `@file` can go anywhere in the message: start, middle, end, doesn't matter. And you can use multiple in one message:
+Bare `@file` can go anywhere in normal prose without consuming the words after it:
 
 ```
-:ChatSend compare @file src/old_parser.lua and @file src/new_parser.lua
+:ChatSend can you see @file fully?
+```
+
+Use the braced form for named files. You can use it multiple times:
+
+```
+:ChatSend compare @{file src/old_parser.lua} and @{file src/new_parser.lua}
 ```
 
 Both files get resolved before the message goes out. The model sees both.
 
-**Paths are relative to Neovim's cwd.** Run `:pwd` if you're not sure where that is. `@file ~/.config/nvim/init.lua` with an absolute path or `~` expansion works too.
+**Paths are relative to Neovim's cwd.** Run `:pwd` if you're not sure where that is. `@{file ~/.config/nvim/init.lua}` with an absolute path or `~` expansion works too. Braces also allow spaces in paths.
 
 ### @dir: give the model a view of a directory
 
 ```
-:ChatSend @dir lua/chatforge give me an overview of how this codebase is structured
+:ChatSend @{dir lua/chatforge} give me an overview of how this codebase is structured
 ```
 
 chatforge lists the directory one level deep. Each entry is marked `f` for file or `d` for directory. The model gets a clear picture of what's there without you having to paste a tree manually or describe the structure yourself.
 
 ```
-:ChatSend what's in @dir src/components and which ones look like they handle state
+:ChatSend what's in @{dir src/components} and which ones look like they handle state
 ```
 
 ```
-:ChatSend @dir . what should I clean up in this project root
+:ChatSend @dir what should I clean up in this project root
 ```
 
 Like `@file`, `@dir` can go anywhere in the message and you can use multiple.
@@ -233,12 +239,12 @@ Like `@file`, `@dir` can go anywhere in the message and you can use multiple.
 ### Combining @file and @dir
 
 ```
-:ChatSend here's the project @dir lua/chatforge and here's the file I'm working on @file lua/chatforge/ui/chat.lua, what's the best place to add streaming support
+:ChatSend here's the project @{dir lua/chatforge} and here's the file I'm working on @{file lua/chatforge/ui/chat.lua}, what's the best place to add streaming support
 ```
 
 Both get resolved and injected. The model sees the directory structure and the specific file in one prompt.
 
-**Both are case-insensitive**. `@FILE`, `@File`, `@file` all work the same. If a path can't be read, chatforge drops an inline comment into the prompt explaining what failed so the model can acknowledge it rather than silently pretending the file doesn't exist.
+**Both are case-insensitive**. `@FILE`, `@File`, and `@file` all work the same. If a named path cannot be read, chatforge adds an inline context error instead of silently pretending the file exists.
 
 ---
 
@@ -276,11 +282,11 @@ This automatic injection happens for:
 | `delete file <path>` | Nothing extra |
 | Anything else | Sent as-is |
 
-**If you want to ask about a different file** not the one you currently have open use `@file` explicitly. That overrides the auto-injection and lets you point at anything:
+**If you want to ask about a different file** use `@{file path}` explicitly:
 
 ```
 -- you're in init.lua but want to ask about parser.lua
-:ChatSend fix the edge case in @file lua/chatforge/core/parser.lua
+:ChatSend fix the edge case in @{file lua/chatforge/core/parser.lua}
 ```
 
 **If you want no automatic context at all** just ask a plain question that doesn't start with `fix`, `explain`, or `refactor`. chatforge only injects context when the phrasing suggests you're working on the current file.
@@ -426,7 +432,7 @@ The last response had no fenced code blocks. The model responded with plain text
 **`Open or focus a source buffer first`**
 chatforge could not find the file buffer that should receive an apply or diff. Open the target file, then run `:Chat`.
 
-**`@file path could not be read`**
+**`@{file path} could not be read`**
 Path doesn't exist or can't be opened. Paths are relative to Neovim's cwd. `:pwd` shows you where that is.
 
 **Debug mode**

@@ -1,7 +1,9 @@
 -- Enriches user input before it goes to the API.
 -- Handles:
---   @file path/to/file   inject that file's contents into the prompt
---   @dir  path/to/dir    inject a tree listing of the directory
+--   @file                inject the current live buffer
+--   @{file path/to/file} inject a named file
+--   @dir                 inject the current working directory
+--   @{dir path/to/dir}   inject a named directory
 --   explain / fix / refactor prefix → inject current buffer content
 
 local M     = {}
@@ -53,7 +55,7 @@ local function resolve_dir_path(path)
   if path == "/" or path == "." or path == "" then
     return cwd
   end
-  -- strip a leading slash so @dir /src means cwd/src
+  -- Strip a leading slash so @{dir /src} means cwd/src.
   local stripped = path:match("^/(.+)$")
   if stripped then
     return cwd .. "/" .. stripped
@@ -87,12 +89,8 @@ local function cursor_line_for_buffer(bufnr)
   return 1
 end
 
--- Resolve all @file and @dir mentions in the input.
--- @file behaviours:
---   @file          (bare)   → inject current open buffer (in-memory content)
---   @file /        or .     → inject current open buffer
---   @file some/path         → read from disk via vim.fn.expand (relative or absolute)
--- @dir always resolves relative to cwd (/ and . mean cwd).
+-- Named context uses braces so normal prose after a bare token is never
+-- interpreted as a path: "review @file fully" means current buffer + "fully".
 local function resolve_at_mentions(input, src_bufnr)
   local injections = {}
   local resolved   = input
@@ -111,56 +109,82 @@ local function resolve_at_mentions(input, src_bufnr)
     local ft      = buf_u.get_filetype(src_bufnr)
     local content = buf_u.get_content(src_bufnr)
     table.insert(injections, { tag = "@file", path = path_label or "(current buffer)", ok = true })
-    return hold(string.format("\n\nFile: %s\n```%s\n%s\n```", name ~= "" and name or "(unnamed)", ft, content))
+    local display_name = name ~= "" and name or "(unnamed)"
+    return hold(string.format(
+      "\n\n[ChatForge context: current live Neovim buffer %s. This is accessible user-provided code.]\nFile: %s\n```%s\n%s\n```",
+      display_name,
+      display_name,
+      ft,
+      content
+    ))
   end
 
-  -- 1. Bare @file with no path: replace before the path-based loop
-  --    Pattern: @file not followed by non-whitespace (end of string or space/newline next)
-  resolved = resolved:gsub("(@[fF][iI][lL][eE])(%s*)([%?%!%,%;%:])", function(_, space, punct)
-    return current_file_block("(current buffer)") .. space .. punct
-  end)
-  resolved = resolved:gsub("(@[fF][iI][lL][eE])(%s+[%./]?%s*$)", function(tag, _)
-    return tag .. " /"  -- normalise to @file / so the path loop handles it
-  end)
-  resolved = resolved:gsub("(@[fF][iI][lL][eE])%s*$", function(_)
-    -- bare @file at very end of string
-    return current_file_block("(current buffer)")
-  end)
+  local function trim(value)
+    return (value:gsub("^%s+", ""):gsub("%s+$", ""))
+  end
 
-  -- 2. @file <path>: path ends at whitespace or end of string
-  for tag, path in resolved:gmatch("(@[fF][iI][lL][eE]%s+(%S+))") do
-    local block
-    if path:match("^[%?%!%,%;%:]$") then
-      block = current_file_block("(current buffer)") .. " " .. path
-    elseif is_current_file_ref(path) then
-      -- / or . → inject current buffer content (in-memory, not read from disk)
-      block = current_file_block(path .. " (current buffer)")
-    else
-      -- explicit path: read from disk exactly as written
-      local contents, err = read_file(path)
-      if err then
-        block = "\n<!-- @file " .. path .. " could not be read: " .. err .. " -->"
-      else
-        local ft = vim.filetype.match({ filename = path }) or ""
-        block = hold(string.format("\n\nFile: %s\n```%s\n%s\n```", path, ft, contents))
-        table.insert(injections, { tag = "@file", path = path, ok = true })
-      end
+  -- Resolve explicit named contexts first. Their replacement is held behind a
+  -- placeholder so tokens inside injected source code are not parsed again.
+  resolved = resolved:gsub("@%{[fF][iI][lL][eE]%s*([^}]*)%}", function(raw_path)
+    local path = trim(raw_path)
+    if is_current_file_ref(path) then
+      return current_file_block("(current buffer)")
     end
-    resolved = resolved:gsub(vim.pesc(tag), block, 1)
-  end
+    local contents, err = read_file(path)
+    if err then
+      return hold("\n<!-- @{file " .. path .. "} could not be read: " .. err .. " -->")
+    end
+    local ft = vim.filetype.match({ filename = path }) or ""
+    table.insert(injections, { tag = "@{file}", path = path, ok = true })
+    return hold(string.format(
+      "\n\n[ChatForge context: named file %s. This is accessible user-provided code.]\nFile: %s\n```%s\n%s\n```",
+      path,
+      path,
+      ft,
+      contents
+    ))
+  end)
 
-  -- 3. @dir <path>: always cwd-anchored
-  for tag, path in resolved:gmatch("(@[dD][iI][rR]%s+(%S+))") do
+  resolved = resolved:gsub("@%{[dD][iI][rR]%s*([^}]*)%}", function(raw_path)
+    local path = trim(raw_path)
     local listing, err = read_dir(path)
     if err then
-      local msg = "\n<!-- @dir " .. path .. " could not be read: " .. err .. " -->"
-      resolved = resolved:gsub(vim.pesc(tag), msg, 1)
-    else
-      local block = hold(string.format("\n\n```\n%s\n```", listing))
-      resolved = resolved:gsub(vim.pesc(tag), block, 1)
-      table.insert(injections, { tag = "@dir", path = path, ok = true })
+      return hold("\n<!-- @{dir " .. path .. "} could not be read: " .. err .. " -->")
     end
+    table.insert(injections, { tag = "@{dir}", path = path, ok = true })
+    return hold(string.format(
+      "\n\n[ChatForge context: directory listing %s.]\n```\n%s\n```",
+      path == "" and vim.fn.getcwd() or path,
+      listing
+    ))
+  end)
+
+  local function replace_bare_token(text, token_pattern, replacement)
+    local source = text
+    return source:gsub("()" .. token_pattern .. "()", function(start_pos, end_pos)
+      local before = source:sub(start_pos - 1, start_pos - 1)
+      local after = source:sub(end_pos, end_pos)
+      if before:match("[%w_]") or after:match("[%w_]") then
+        return source:sub(start_pos, end_pos - 1)
+      end
+      return replacement()
+    end)
   end
+
+  resolved = replace_bare_token(resolved, "@[fF][iI][lL][eE]", function()
+    return current_file_block("(current buffer)")
+  end)
+  resolved = replace_bare_token(resolved, "@[dD][iI][rR]", function()
+    local listing, err = read_dir("")
+    if err then
+      return hold("\n<!-- @dir could not be read: " .. err .. " -->")
+    end
+    table.insert(injections, { tag = "@dir", path = "(cwd)", ok = true })
+    return hold(string.format(
+      "\n\n[ChatForge context: current working directory listing.]\n```\n%s\n```",
+      listing
+    ))
+  end)
 
   for key, block in pairs(placeholders) do
     resolved = resolved:gsub(vim.pesc(key), block)
@@ -183,7 +207,7 @@ local function build_prompt(input, action, src_bufnr)
       start_line = math.max(end_line - MAX_AUTO_CONTEXT_LINES + 1, 1)
       local lines = vim.api.nvim_buf_get_lines(src_bufnr, start_line - 1, end_line, false)
       return string.format(
-        "%s\n\nFile: %s\nContext: lines %d-%d of %d. Use visual selection or @file for a different scope.\n```%s\n%s\n```",
+        "%s\n\n[ChatForge context: current live Neovim buffer. This is accessible user-provided code.]\nFile: %s\nContext: lines %d-%d of %d. Use visual selection or @{file path} for a different scope.\n```%s\n%s\n```",
         input,
         name ~= "" and name or "(unnamed)",
         start_line,
@@ -194,7 +218,7 @@ local function build_prompt(input, action, src_bufnr)
       )
     else
       local content = buf_u.get_content(src_bufnr)
-      return string.format("%s\n\nFile: %s\n```%s\n%s\n```",
+      return string.format("%s\n\n[ChatForge context: current live Neovim buffer. This is accessible user-provided code.]\nFile: %s\n```%s\n%s\n```",
         input, name ~= "" and name or "(unnamed)", ft, content)
     end
   end

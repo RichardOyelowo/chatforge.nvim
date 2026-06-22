@@ -111,9 +111,9 @@ local function completion_items()
     if not path:match("/%.git/") then
       local rel = vim.fn.fnamemodify(path, ":.")
       if vim.fn.isdirectory(path) == 1 then
-        table.insert(dirs, { word = "@dir " .. rel, menu = "dir" })
+        table.insert(dirs, { word = "@{dir " .. rel .. "}", menu = "dir" })
       else
-        table.insert(files, { word = "@file " .. rel, menu = "file" })
+        table.insert(files, { word = "@{file " .. rel .. "}", menu = "file" })
       end
     end
   end
@@ -121,8 +121,8 @@ local function completion_items()
   table.sort(dirs, function(a, b) return a.word < b.word end)
   table.sort(files, function(a, b) return a.word < b.word end)
 
-  table.insert(items, { word = "@file ", menu = "chatforge" })
-  table.insert(items, { word = "@dir ", menu = "chatforge" })
+  table.insert(items, { word = "@file", menu = "current buffer" })
+  table.insert(items, { word = "@dir", menu = "current directory" })
 
   for _, item in ipairs(dirs) do
     if #items >= limit then break end
@@ -141,8 +141,8 @@ end
 
 local function completion_prefix(line, col)
   local before = line:sub(1, col)
-  return before:match("(@[fF][iI][lL][eE]%s+%S*)$")
-    or before:match("(@[dD][iI][rR]%s+%S*)$")
+  return before:match("(@%{[fF][iI][lL][eE]%s+[^}]*)$")
+    or before:match("(@%{[dD][iI][rR]%s+[^}]*)$")
     or before:match("(@%S*)$")
 end
 
@@ -162,9 +162,7 @@ local function trigger_at_completion()
     local filtered = {}
     local lower_prefix = prefix:lower()
     for _, item in ipairs(completion_items()) do
-      local is_generic = item.menu == "chatforge"
-        and (lower_prefix == "@file " or lower_prefix == "@dir ")
-      if not is_generic and item.word:lower():find(lower_prefix, 1, true) == 1 then
+      if item.word:lower():find(lower_prefix, 1, true) == 1 then
         table.insert(filtered, item)
       end
     end

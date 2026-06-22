@@ -22,6 +22,8 @@ M.defaults = {
   debug         = false,
   system_prompt = "You are a helpful coding assistant embedded in Neovim. "
                .. "Be concise. Use fenced code blocks with language tags for all code. "
+               .. "When ChatForge context is included, it is accessible user-provided content from the editor. "
+               .. "Do not claim that you cannot see that content. "
                .. "When suggesting file changes, clearly state the filename.",
 }
  
