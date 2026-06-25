@@ -424,10 +424,10 @@ render-markdown.nvim can render those buffers through its normal filetype
 handling. ChatForge does not call its API or configure it.
 
 dressing.nvim ~
-ChatForge uses `vim.ui.input` for |:ChatModel| and `vim.ui.select` for backend
-recovery prompts. An installed and configured dressing.nvim can style those
-standard calls. It does not change the chat split, message pane, preview, or
-diff layout.
+ChatForge loads dressing.nvim for |:ChatModel| and backend recovery prompts
+when it is available. Native `vim.ui.input` and `vim.ui.select` remain the
+fallback when dressing.nvim is not installed. dressing.nvim does not change the
+chat split, message pane, preview, or diff layout.
 
 Both dependencies are optional. |:checkhealth| reports whether they are on
 `runtimepath`.

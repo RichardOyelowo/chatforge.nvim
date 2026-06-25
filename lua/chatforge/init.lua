@@ -25,6 +25,7 @@ function M.setup(opts)
   local chat     = require("chatforge.ui.chat")
   local actions  = require("chatforge.core.actions")
   local state    = require("chatforge.core.state")
+  local dialog   = require("chatforge.ui.dialog")
   local backend_control = require("chatforge.api.backend_control")
 
   local group = vim.api.nvim_create_augroup("chatforge_source_tracking", { clear = true })
@@ -148,7 +149,7 @@ function M.setup(opts)
       state.set_model(src, cmd.args)
       vim.notify("[chatforge] Model → " .. cmd.args, vim.log.levels.INFO)
     else
-      vim.ui.input({ prompt = "Model: ", default = state.get_model(src) }, function(model)
+      dialog.input({ prompt = "Model: ", default = state.get_model(src) }, function(model)
         if model and model ~= "" then
           state.set_model(src, model)
           vim.notify("[chatforge] Model → " .. model, vim.log.levels.INFO)

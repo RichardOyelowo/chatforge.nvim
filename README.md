@@ -24,9 +24,9 @@ Context is explicit. Use `@file` or `@dir` when the model needs source or projec
 Optional:
 
 - [render-markdown.nvim](https://github.com/MeanderingProgrammer/render-markdown.nvim) can render the Markdown chat and input buffers.
-- [dressing.nvim](https://github.com/stevearc/dressing.nvim) can replace the `vim.ui.input` and `vim.ui.select` prompts used by ChatForge.
+- [dressing.nvim](https://github.com/stevearc/dressing.nvim) is used for ChatForge prompts when available. Native `vim.ui.input` and `vim.ui.select` remain the fallback.
 
-Neither optional plugin is loaded or configured by ChatForge. Both are reported by `:checkhealth chatforge`.
+Neither optional plugin is required. Both are reported by `:checkhealth chatforge`.
 
 ## Installation
 
@@ -115,16 +115,6 @@ The first fenced code block starts replacing the source buffer while Ollama resp
 ```
 
 Use `:ChatReject` instead if the proposal is wrong.
-
-## Demos
-
-- [Overview](images/demo-overview.webm)
-- [Full chat workflow](images/demo-full-chat-workflow.webm)
-- [Staged apply, diff, and reject](images/demo-staged-apply-diff-reject.webm)
-- [`@file` and `@dir` completion](images/demo-context-completion.webm)
-- [Visual-selection edit](images/demo-selection-edit.webm)
-- [Plain chat and example code](images/demo-safe-example.webm)
-- [Backend and model recovery](images/demo-backend-model-recovery.webm)
 
 ## Normal chat workflow
 

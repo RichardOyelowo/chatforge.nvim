@@ -627,6 +627,20 @@ function M.open(src_bufnr)
         return
       end
       render.redraw()
+      render.clamp_scroll()
+    end,
+  })
+  vim.api.nvim_create_autocmd({ "WinScrolled", "CursorMoved" }, {
+    group = resize_group,
+    callback = function()
+      if not state.chat_is_open() then
+        return
+      end
+      vim.schedule(function()
+        if state.chat_is_open() then
+          render.clamp_scroll()
+        end
+      end)
     end,
   })
   vim.api.nvim_create_autocmd("WinClosed", {

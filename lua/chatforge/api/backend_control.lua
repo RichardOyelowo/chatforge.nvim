@@ -1,6 +1,7 @@
 local M = {}
 
 local state = require("chatforge.core.state")
+local dialog = require("chatforge.ui.dialog")
 
 local function notify(msg, level)
   vim.notify("[chatforge] " .. msg, level or vim.log.levels.INFO)
@@ -55,7 +56,7 @@ end
 function M.offer_ollama_start(reason)
   vim.schedule(function()
     local msg = reason or "Ollama is not reachable."
-    vim.ui.select({
+    dialog.select({
       "Show command",
       "Ignore",
     }, {
@@ -120,7 +121,7 @@ end
 function M.offer_model_pull(model, reason)
   vim.schedule(function()
     local command = "ollama pull " .. model
-    vim.ui.select({
+    dialog.select({
       "Run `" .. command .. "` from Neovim",
       "Show command only",
       "Ignore",

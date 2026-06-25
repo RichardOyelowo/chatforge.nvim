@@ -139,6 +139,59 @@ test("forced staging turns a normal prompt into an edit request", function()
   truthy(forced.prompt:find("complete replacement", 1, true), "forced prompt should use edit instructions")
 end)
 
+test("dialog wrapper falls back to native vim.ui", function()
+  package.loaded["chatforge.ui.dialog"] = nil
+  package.loaded["dressing"] = nil
+  local old_input = vim.ui.input
+  local called = false
+  vim.ui.input = function(opts, cb)
+    called = opts.prompt == "Model: "
+    cb("fallback-model")
+  end
+
+  local dialog = require("chatforge.ui.dialog")
+  local value = nil
+  dialog.input({ prompt = "Model: " }, function(model)
+    value = model
+  end)
+
+  vim.ui.input = old_input
+  truthy(called, "native vim.ui.input should be called")
+  equal(value, "fallback-model")
+end)
+
+test("dialog wrapper sets up dressing when available", function()
+  package.loaded["chatforge.ui.dialog"] = nil
+  package.loaded["dressing"] = nil
+  local setup_count = 0
+  package.preload["dressing"] = function()
+    return {
+      setup = function()
+        setup_count = setup_count + 1
+      end,
+    }
+  end
+
+  local old_select = vim.ui.select
+  vim.ui.select = function(items, _, cb)
+    cb(items[1])
+  end
+
+  local dialog = require("chatforge.ui.dialog")
+  local choice = nil
+  dialog.select({ "one", "two" }, { prompt = "Pick:" }, function(selected)
+    choice = selected
+  end)
+  dialog.select({ "one", "two" }, { prompt = "Pick:" }, function() end)
+
+  vim.ui.select = old_select
+  package.preload["dressing"] = nil
+  package.loaded["dressing"] = nil
+
+  equal(choice, "one")
+  equal(setup_count, 1, "dressing should be set up once")
+end)
+
 test("sessions remain isolated by source buffer", function()
   local state = reset_state()
   local first = vim.api.nvim_create_buf(false, true)
