@@ -13,7 +13,7 @@
  
 local M = {}
 
-M.version = "0.2.0-dev"
+M.version = "0.2.0"
  
 function M.setup(opts)
   local config  = require("chatforge.config")
