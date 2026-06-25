@@ -3,6 +3,7 @@
 :ChatApply	chatforge.txt	/*:ChatApply*
 :ChatBackend	chatforge.txt	/*:ChatBackend*
 :ChatDiff	chatforge.txt	/*:ChatDiff*
+:ChatEdit	chatforge.txt	/*:ChatEdit*
 :ChatModel	chatforge.txt	/*:ChatModel*
 :ChatNextChange	chatforge.txt	/*:ChatNextChange*
 :ChatPrevChange	chatforge.txt	/*:ChatPrevChange*

@@ -292,7 +292,8 @@ end
  
 -- ── send flow ──────────────────────────────────────────────────────────────
  
-local function do_send(src_bufnr, input)
+local function do_send(src_bufnr, input, opts)
+  opts = opts or {}
   if not input or input:match("^%s*$") then
     focus_input()
     return false
@@ -314,14 +315,15 @@ local function do_send(src_bufnr, input)
   state.request_id = state.request_id + 1
   local request_id = state.request_id
   local model      = state.get_model(src_bufnr)
-  local dispatched = dispatcher.dispatch(input, src_bufnr)
+  local dispatched = dispatcher.dispatch(input, src_bufnr, { force_stage = opts.force_stage == true })
   local edit_target = state.edit_target
   state.edit_target = nil
   if edit_target then
     src_bufnr = edit_target.bufnr
     state.source_bufnr = src_bufnr
   end
-  local should_stage = edit_target ~= nil
+  local should_stage = opts.force_stage == true
+    or edit_target ~= nil
     or dispatched.action == "edit_file"
     or dispatched.action == "create_file"
   local explicit_target_file = dispatched.target
@@ -345,6 +347,7 @@ local function do_send(src_bufnr, input)
         target_bufnr = src_bufnr,
         target_file = explicit_target_file,
         action = dispatched.action,
+        force_stage = opts.force_stage == true,
         model = model,
         prompt_summary = input,
       },
@@ -448,7 +451,7 @@ local function do_send(src_bufnr, input)
     log.log("pending_blocks=%d", #state.pending_blocks)
     render.append_segments(segments)
     if stream and stream.finished and state.staged_changes[1] then
-      render.append_status("Implementation #1 staged. Use :ChatAccept, :ChatReject, or :ChatDiff.")
+      render.append_status("Implementation #1 is staged live in the source buffer. Preview with :ChatPreview 1. Review with :ChatDiff 1. Keep with :ChatAccept or undo with :ChatReject.")
     end
     for i, block in ipairs(state.pending_blocks) do
       if block.stageable and not state.staged_changes[i] then
@@ -544,14 +547,14 @@ end
 
 -- input == nil: focus the right-side input area
 -- input == string: send directly
-function M.send_message(src_bufnr, input)
+function M.send_message(src_bufnr, input, opts)
   if state.loading then
     vim.notify("[chatforge] Request in progress…", vim.log.levels.WARN)
     return
   end
  
   if input then
-    do_send(src_bufnr, input)
+    do_send(src_bufnr, input, opts)
   else
     if vim.api.nvim_get_current_buf() == state.input_bufnr then
       send_from_input()

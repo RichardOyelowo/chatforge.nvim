@@ -39,6 +39,7 @@ Neither optional plugin is loaded or configured by ChatForge. Both are reported 
   cmd = {
     "Chat",
     "ChatSend",
+    "ChatEdit",
     "ChatModel",
     "ChatReset",
     "ChatApply",
@@ -94,10 +95,16 @@ Try a read-only question:
 :ChatSend review @file for error-handling gaps
 ```
 
-Try a staged edit:
+Try a staged edit. Edit-shaped prompts write into the live source buffer as a proposal:
 
 ```vim
 :ChatSend fix the error handling in this file
+```
+
+Use `:ChatEdit` when you want to force a live staged edit regardless of wording:
+
+```vim
+:ChatEdit add input validation to this file
 ```
 
 The first fenced code block starts replacing the source buffer while Ollama responds. Review the marked lines, then choose one action:
@@ -127,7 +134,8 @@ The source buffer that opened the chat owns the conversation and model choice. O
 
 There are three ways to send a message:
 
-- Run `:ChatSend some text` to send text directly.
+- Run `:ChatSend some text` to send text directly. Edit-shaped text stages live in the source buffer.
+- Run `:ChatEdit some text` to force a live staged source-buffer edit.
 - Run `:ChatSend` to focus the message pane. If the pane already has focus, the same command sends its contents.
 - Select source lines and run `:'<,'>ChatSend`. ChatForge asks for replacement code and stages the result back into that range.
 
@@ -139,7 +147,7 @@ The message pane has buffer-local behavior:
 
 ChatForge sets no global keymaps.
 
-Only edit-shaped requests stage code. Plain chat responses keep fenced code in the chat as example code. Before another message can be sent, accept or reject any existing staged change.
+Edit-shaped requests stage code. ChatForge treats prompts that ask to add, change, update, remove, rewrite, generate, implement, create, improve, or make code as live edit requests. Plain review and explanation prompts keep fenced code in the chat as example code. Before another message can be sent, accept or reject any existing staged change.
 
 ## Context references
 
@@ -205,14 +213,17 @@ Injected source is protected from a second context pass. An `@{file ...}` string
 
 ChatForge classifies the start of each message. Matching is case-insensitive.
 
-| Message prefix | Result |
+| Message wording | Result |
 |---|---|
 | `explain ` | Add current-buffer context. Do not stage code. |
+| `review `, `how `, `what `, `why ` | Chat/review mode. Do not stage code unless `:ChatEdit` is used. |
 | `fix ` | Add current-buffer context. Treat the first code block as an edit. |
 | `refactor ` | Add current-buffer context. Treat the first code block as an edit. |
+| `add`, `change`, `update`, `remove`, `rewrite`, `generate`, `implement`, `create`, `improve`, `make` | Add current-buffer context. Treat the first code block as an edit. |
 | `edit file <path>` | Add context from the current source buffer. Stage into `<path>`. |
 | `create file <path>` | Stage into `<path>` without automatic source context. |
 | `delete file <path>` | Classify the request, but do not delete or stage a file. |
+| `:ChatEdit <prompt>` | Force the prompt to stage live in the source buffer. |
 | Anything else | Send as normal chat unless it came from a visual selection. |
 
 Automatic current-buffer context is capped at 160 lines. For a larger buffer, ChatForge sends a 160-line window around the visible cursor. Bare `@file` sends the full live buffer and bypasses that cap.
@@ -223,11 +234,11 @@ Target paths after `edit file` and `create file` stop at whitespace. Paths with 
 
 Staging is an in-memory buffer edit. It is not a disk write.
 
-For `fix`, `refactor`, `edit file`, `create file`, and visual-selection requests, ChatForge asks Ollama for a streamed response. When the first fenced code block starts, ChatForge removes the target text and inserts complete response lines into the target buffer. Proposed lines use `ChatforgeProposedChange` and an `AI` end-of-line marker.
+For edit-shaped prompts, `:ChatEdit`, `edit file`, `create file`, and visual-selection requests, ChatForge asks Ollama for a streamed response. When the first fenced code block starts, ChatForge removes the target text and inserts complete response lines into the target buffer. Proposed lines use `ChatforgeProposedChange` and an `AI` end-of-line marker.
 
 The target depends on the request:
 
-- `fix` and `refactor` replace the full current buffer.
+- Edit-shaped prompts replace the full current buffer.
 - A visual selection replaces only its original line range.
 - `edit file <path>` and `create file <path>` open or create that path in the source window, then replace the full buffer.
 
@@ -247,6 +258,8 @@ The source buffer becomes modified during staging. Other editor commands, autosa
 ```
 
 Preview opens the selected response block in a centered floating window. It does not compare text.
+
+The chat output prints the exact command for each block, such as `Preview this block: :ChatPreview 2` and `Review this block: :ChatDiff 2`. Users do not have to guess the block number.
 
 Inside the preview:
 
@@ -304,6 +317,7 @@ There is no force-accept or force-reject command in v0.1.0. Review the diff, the
 |---|---|
 | `:Chat` | Open the chat for the current source buffer, or focus the existing chat input. |
 | `:ChatSend [message]` | Send text. With no text, focus the input or send its current contents. A range sends a selected-line rewrite. |
+| `:ChatEdit <message>` | Force a live staged edit in the source buffer. A range rewrites only the selected lines. |
 | `:ChatModel [model]` | Set the model for the current source buffer. With no argument, open `vim.ui.input`. |
 | `:ChatReset` | Ignore the current request result, reject fresh staged work, clear all staged metadata and this buffer's history, then redraw the chat. |
 | `:ChatPreview [N]` | Open response block N in a float. Default: 1. |

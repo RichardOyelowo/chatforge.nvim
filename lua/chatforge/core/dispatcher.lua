@@ -21,6 +21,111 @@ local RULES = {
   { pattern = "^[rR][eE][fF][aA][cC][tT][oO][rR]%s+",                 action = "edit_file" },
 }
 
+local READ_ONLY_PATTERNS = {
+  "^%s*explain%s+",
+  "^%s*review%s+",
+  "^%s*describe%s+",
+  "^%s*summarize%s+",
+  "^%s*what%s+",
+  "^%s*why%s+",
+  "^%s*how%s+",
+  "^%s*can%s+you%s+see%s+",
+  "^%s*do%s+not%s+edit",
+  "^%s*do%s+not%s+change",
+  "^%s*do%s+not%s+modify",
+  "^%s*don't%s+edit",
+  "^%s*don't%s+change",
+  "^%s*don't%s+modify",
+  "^%s*just%s+explain",
+  "^%s*just%s+review",
+  "^%s*just%s+tell",
+  "^%s*just%s+show",
+  "^%s*only%s+explain",
+  "^%s*only%s+review",
+  "^%s*only%s+tell",
+  "^%s*only%s+show",
+  "no%s+changes",
+  "without%s+changing",
+  "example%s+only",
+  "just%s+an%s+example",
+}
+
+local EDIT_PATTERNS = {
+  "^%s*add%s+",
+  "^%s*change%s+",
+  "^%s*update%s+",
+  "^%s*modify%s+",
+  "^%s*replace%s+",
+  "^%s*remove%s+",
+  "^%s*delete%s+",
+  "^%s*rewrite%s+",
+  "^%s*generate%s+",
+  "^%s*implement%s+",
+  "^%s*create%s+",
+  "^%s*improve%s+",
+  "^%s*optimi[sz]e%s+",
+  "^%s*convert%s+",
+  "^%s*migrate%s+",
+  "^%s*extract%s+",
+  "^%s*rename%s+",
+  "^%s*make%s+this%s+",
+  "^%s*make%s+it%s+",
+  "^%s*turn%s+",
+  "please%s+add",
+  "please%s+change",
+  "please%s+update",
+  "please%s+modify",
+  "please%s+replace",
+  "please%s+remove",
+  "please%s+rewrite",
+  "please%s+generate",
+  "please%s+implement",
+  "please%s+create",
+  "please%s+improve",
+  "can%s+you%s+add",
+  "can%s+you%s+change",
+  "can%s+you%s+update",
+  "can%s+you%s+modify",
+  "can%s+you%s+replace",
+  "can%s+you%s+remove",
+  "can%s+you%s+rewrite",
+  "can%s+you%s+generate",
+  "can%s+you%s+implement",
+  "can%s+you%s+create",
+  "can%s+you%s+improve",
+  "could%s+you%s+add",
+  "could%s+you%s+change",
+  "could%s+you%s+update",
+  "could%s+you%s+modify",
+  "could%s+you%s+replace",
+  "could%s+you%s+remove",
+  "could%s+you%s+rewrite",
+  "could%s+you%s+generate",
+  "could%s+you%s+implement",
+  "could%s+you%s+create",
+  "could%s+you%s+improve",
+  "i%s+need%s+.*added",
+  "i%s+need%s+.*changed",
+  "i%s+need%s+.*updated",
+  "i%s+need%s+.*modified",
+  "i%s+need%s+.*replaced",
+  "i%s+need%s+.*removed",
+  "i%s+need%s+.*rewritten",
+  "i%s+need%s+.*generated",
+  "i%s+need%s+.*created",
+  "i%s+need%s+.*improved",
+  "i%s+want%s+.*added",
+  "i%s+want%s+.*changed",
+  "i%s+want%s+.*updated",
+  "i%s+want%s+.*modified",
+  "i%s+want%s+.*replaced",
+  "i%s+want%s+.*removed",
+  "i%s+want%s+.*rewritten",
+  "i%s+want%s+.*generated",
+  "i%s+want%s+.*created",
+  "i%s+want%s+.*improved",
+}
+
 local function classify(input)
   for _, rule in ipairs(RULES) do
     local m = { input:match(rule.pattern) }
@@ -28,7 +133,33 @@ local function classify(input)
       return rule.action, rule.capture and m[rule.capture] or nil
     end
   end
+  if M.is_edit_request(input) then
+    return "edit_file", nil
+  end
   return "chat", nil
+end
+
+function M.is_read_only_request(input)
+  local lower = (input or ""):lower()
+  for _, pattern in ipairs(READ_ONLY_PATTERNS) do
+    if lower:match(pattern) then
+      return true
+    end
+  end
+  return false
+end
+
+function M.is_edit_request(input)
+  local lower = (input or ""):lower()
+  if M.is_read_only_request(lower) then
+    return false
+  end
+  for _, pattern in ipairs(EDIT_PATTERNS) do
+    if lower:match(pattern) then
+      return true
+    end
+  end
+  return false
 end
 
 -- Read a file from disk and return its contents, or an error string.
@@ -196,6 +327,13 @@ end
 local function build_prompt(input, action, src_bufnr)
   local ft   = buf_u.get_filetype(src_bufnr)
   local name = buf_u.get_name(src_bufnr)
+  local edit_instruction = ""
+  if action == "edit_file" then
+    edit_instruction = "\n\n[ChatForge edit request]\n"
+      .. "Return the complete replacement for the target buffer in the first fenced code block. "
+      .. "Do not return a partial snippet unless the user selected a range. "
+      .. "Text outside that first fenced block is allowed, but the first fenced block is what ChatForge stages live in Neovim."
+  end
 
   if action == "edit_file" or action == "explain" then
     local line_count = vim.api.nvim_buf_line_count(src_bufnr)
@@ -207,8 +345,9 @@ local function build_prompt(input, action, src_bufnr)
       start_line = math.max(end_line - MAX_AUTO_CONTEXT_LINES + 1, 1)
       local lines = vim.api.nvim_buf_get_lines(src_bufnr, start_line - 1, end_line, false)
       return string.format(
-        "%s\n\n[ChatForge context: current live Neovim buffer. This is accessible user-provided code.]\nFile: %s\nContext: lines %d-%d of %d. Use visual selection or @{file path} for a different scope.\n```%s\n%s\n```",
+        "%s%s\n\n[ChatForge context: current live Neovim buffer. This is accessible user-provided code.]\nFile: %s\nContext: lines %d-%d of %d. Use visual selection or @{file path} for a different scope.\n```%s\n%s\n```",
         input,
+        edit_instruction,
         name ~= "" and name or "(unnamed)",
         start_line,
         end_line,
@@ -218,15 +357,16 @@ local function build_prompt(input, action, src_bufnr)
       )
     else
       local content = buf_u.get_content(src_bufnr)
-      return string.format("%s\n\n[ChatForge context: current live Neovim buffer. This is accessible user-provided code.]\nFile: %s\n```%s\n%s\n```",
-        input, name ~= "" and name or "(unnamed)", ft, content)
+      return string.format("%s%s\n\n[ChatForge context: current live Neovim buffer. This is accessible user-provided code.]\nFile: %s\n```%s\n%s\n```",
+        input, edit_instruction, name ~= "" and name or "(unnamed)", ft, content)
     end
   end
 
   return input
 end
 
-function M.dispatch(input, src_bufnr)
+function M.dispatch(input, src_bufnr, opts)
+  opts = opts or {}
   -- 1. Resolve @file / @dir mentions first
   local resolved, injections = resolve_at_mentions(input, src_bufnr)
   for _, inj in ipairs(injections) do
@@ -235,13 +375,17 @@ function M.dispatch(input, src_bufnr)
 
   -- 2. Classify action
   local action, target = classify(resolved)
+  if opts.force_stage and action ~= "create_file" and action ~= "delete_file" then
+    action = "edit_file"
+    target = nil
+  end
 
   -- 3. Enrich with buffer content for edit/explain actions
   local prompt = build_prompt(resolved, action, src_bufnr)
 
   log.log("dispatch: action=%s target=%s", action, target or "nil")
 
-  return { action = action, prompt = prompt, target = target }
+  return { action = action, prompt = prompt, target = target, stage = action == "edit_file" or action == "create_file" }
 end
 
 return M

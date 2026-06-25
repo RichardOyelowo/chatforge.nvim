@@ -104,6 +104,41 @@ test("injected source is not recursively parsed for context tokens", function()
   truthy(not prompt:find("missing.lua} could not be read", 1, true), "injected source must not be expanded")
 end)
 
+test("edit intent stages by default and review intent stays chat", function()
+  local dispatcher = require("chatforge.core.dispatcher")
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_name(bufnr, vim.fn.tempname() .. ".lua")
+  vim.bo[bufnr].filetype = "lua"
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "local value = 1" })
+
+  local edit = dispatcher.dispatch("please update this to return two", bufnr)
+  equal(edit.action, "edit_file")
+  truthy(edit.stage, "edit intent should be stageable")
+  truthy(edit.prompt:find("complete replacement", 1, true), "edit prompt should ask for a full replacement")
+  truthy(edit.prompt:find("local value = 1", 1, true), "edit prompt should include the live buffer")
+
+  local review = dispatcher.dispatch("how is my code @file ?", bufnr)
+  equal(review.action, "chat")
+  truthy(not review.stage, "review intent should not stage by default")
+  truthy(review.prompt:find("local value = 1", 1, true), "explicit context should still be included")
+
+  local context_question = dispatcher.dispatch("use @dir to explain the project layout", bufnr)
+  equal(context_question.action, "chat")
+  truthy(not context_question.stage, "directory explanation should not stage")
+end)
+
+test("forced staging turns a normal prompt into an edit request", function()
+  local dispatcher = require("chatforge.core.dispatcher")
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.bo[bufnr].filetype = "lua"
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "return 1" })
+
+  local forced = dispatcher.dispatch("make this cleaner", bufnr, { force_stage = true })
+  equal(forced.action, "edit_file")
+  truthy(forced.stage, "forced prompt should be stageable")
+  truthy(forced.prompt:find("complete replacement", 1, true), "forced prompt should use edit instructions")
+end)
+
 test("sessions remain isolated by source buffer", function()
   local state = reset_state()
   local first = vim.api.nvim_create_buf(false, true)

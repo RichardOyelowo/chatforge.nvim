@@ -241,7 +241,7 @@ function M.append_segments(segments)
       n_blocks = n_blocks + 1
       local block = state.pending_blocks[block_index]
       if block and block.stageable == false then
-        table.insert(text_parts, string.format("Example code #%d:", block_index))
+        table.insert(text_parts, string.format("Example code #%d. Preview with :ChatPreview %d.", block_index, block_index))
         table.insert(text_parts, string.format("```%s\n%s\n```", seg.lang or "", seg.content or ""))
       else
         local suffix = ""
@@ -249,10 +249,11 @@ function M.append_segments(segments)
           suffix = " -> " .. block.target_file
         end
         table.insert(text_parts, string.format("Implementation #%d ready%s.", block_index, suffix))
-        table.insert(text_parts, string.format("Preview: :ChatPreview %d.", block_index))
+        table.insert(text_parts, string.format("Preview this block: :ChatPreview %d.", block_index))
+        table.insert(text_parts, string.format("Review this block: :ChatDiff %d.", block_index))
         table.insert(text_parts, string.format("```%s\n%s\n```", seg.lang or "", seg.content or ""))
         if not staged_hint_rendered then
-          table.insert(text_parts, string.format("Review staged change: :ChatAccept, :ChatReject, :ChatDiff %d.", block_index))
+          table.insert(text_parts, "If this block is staged in the source buffer, keep it with :ChatAccept or restore the old text with :ChatReject.")
           staged_hint_rendered = true
           has_actions = true
         end
