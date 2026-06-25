@@ -1,6 +1,7 @@
 -- Commands:
 --   :Chat                   open / focus the chat window
 --   :ChatSend [message]     no args = focus input area, args = send, visual = send selection
+--   :ChatEdit [message]     force a live staged source-buffer edit
 --   :ChatModel [model]      set model for current buffer, or open picker
 --   :ChatReset              clear history and reopen
 --   :ChatApply [N]          accept staged implementation N
@@ -12,7 +13,7 @@
  
 local M = {}
 
-M.version = "0.1.0"
+M.version = "0.2.0"
  
 function M.setup(opts)
   local config  = require("chatforge.config")
@@ -24,6 +25,7 @@ function M.setup(opts)
   local chat     = require("chatforge.ui.chat")
   local actions  = require("chatforge.core.actions")
   local state    = require("chatforge.core.state")
+  local dialog   = require("chatforge.ui.dialog")
   local backend_control = require("chatforge.api.backend_control")
 
   local group = vim.api.nvim_create_augroup("chatforge_source_tracking", { clear = true })
@@ -95,6 +97,48 @@ function M.setup(opts)
     end, 80)
   end, { desc = "Send a message to chatforge", nargs = "*", range = true })
  
+  -- ── :ChatEdit [message] ───────────────────────────────────────────────
+  vim.api.nvim_create_user_command("ChatEdit", function(cmd)
+    local src = vim.api.nvim_get_current_buf()
+    if state.is_plugin_buf(src) then
+      src = state.source_bufnr
+    end
+
+    if not src or not vim.api.nvim_buf_is_valid(src) then
+      vim.notify("[chatforge] Switch to your source buffer first, then run :ChatEdit.", vim.log.levels.WARN)
+      return
+    end
+
+    local input = cmd.args
+    if cmd.range > 0 then
+      local lines = vim.api.nvim_buf_get_lines(src, cmd.line1 - 1, cmd.line2, false)
+      local ft = vim.bo[src].filetype or ""
+      state.edit_target = {
+        bufnr = src,
+        line1 = cmd.line1,
+        line2 = cmd.line2,
+        kind = "selection",
+      }
+      input = string.format(
+        "Rewrite only this selected range. Return only the replacement code for these selected lines.\n\n```%s\n%s\n```",
+        ft,
+        table.concat(lines, "\n")
+      )
+    else
+      state.edit_target = nil
+    end
+
+    if input == "" then
+      vim.notify("[chatforge] Usage: :ChatEdit <change request>", vim.log.levels.WARN)
+      return
+    end
+
+    chat.open(src)
+    vim.defer_fn(function()
+      chat.send_message(src, input, { force_stage = true })
+    end, 80)
+  end, { desc = "Force a live staged chatforge edit", nargs = "*", range = true })
+
   -- ── :ChatModel [model] ────────────────────────────────────────────────
   vim.api.nvim_create_user_command("ChatModel", function(cmd)
     local src = vim.api.nvim_get_current_buf()
@@ -105,7 +149,7 @@ function M.setup(opts)
       state.set_model(src, cmd.args)
       vim.notify("[chatforge] Model → " .. cmd.args, vim.log.levels.INFO)
     else
-      vim.ui.input({ prompt = "Model: ", default = state.get_model(src) }, function(model)
+      dialog.input({ prompt = "Model: ", default = state.get_model(src) }, function(model)
         if model and model ~= "" then
           state.set_model(src, model)
           vim.notify("[chatforge] Model → " .. model, vim.log.levels.INFO)

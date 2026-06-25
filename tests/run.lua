@@ -46,6 +46,7 @@ local function reset_state()
   state.chat_entries = {}
   state.pending_blocks = {}
   state.staged_changes = {}
+  state.recent_contexts = {}
   state.streaming_change = nil
   state.edit_target = nil
   state.applying = false
@@ -94,6 +95,66 @@ test("named file context uses braced syntax and supports spaces", function()
   vim.fn.delete(path)
 end)
 
+test("afile shorthand injects named file context", function()
+  local dispatcher = require("chatforge.core.dispatcher")
+  local path = vim.fn.tempname() .. " shorthand.html"
+  vim.fn.writefile({ "<main class=\"content\"></main>" }, path)
+
+  local result = dispatcher.dispatch("review {afile " .. path .. "}", vim.api.nvim_get_current_buf())
+  truthy(result.prompt:find("<main class=\"content\"></main>", 1, true), "afile shorthand should inject file content")
+  equal(#result.contexts, 1)
+
+  vim.fn.delete(path)
+end)
+
+test("related file context carries across buffers", function()
+  local dispatcher = require("chatforge.core.dispatcher")
+  local state = reset_state()
+  local html_path = vim.fn.tempname() .. ".html"
+  vim.fn.writefile({ "<button class=\"btn_primary\" id=\"save_btn\">Save</button>" }, html_path)
+
+  local html_buf = vim.api.nvim_create_buf(false, true)
+  local first = dispatcher.dispatch("this is the html @{file " .. html_path .. "}", html_buf)
+  state.remember_contexts(first.contexts)
+
+  local css_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_name(css_buf, vim.fn.tempname() .. ".css")
+  vim.bo[css_buf].filetype = "css"
+  vim.api.nvim_buf_set_lines(css_buf, 0, -1, false, { ".btn_primary { color: white; }" })
+
+  local second = dispatcher.dispatch("does this css match the html @file?", css_buf, {
+    related_contexts = state.recent_contexts,
+  })
+
+  truthy(second.prompt:find(".btn_primary { color: white; }", 1, true), "current css should be included")
+  truthy(second.prompt:find("save_btn", 1, true), "recent html should be included")
+
+  vim.fn.delete(html_path)
+end)
+
+test("source text does not control intent classification", function()
+  local dispatcher = require("chatforge.core.dispatcher")
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_name(bufnr, vim.fn.tempname() .. ".lua")
+  vim.bo[bufnr].filetype = "lua"
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "-- please update this later", "return true" })
+
+  local result = dispatcher.dispatch("review @file", bufnr)
+  equal(result.action, "chat")
+  truthy(not result.stage, "review should not stage because source text contains edit words")
+end)
+
+test("chat reset clears remembered related file context", function()
+  local state = reset_state()
+  state.remember_contexts({
+    { path = "one.html", block = "html" },
+  })
+  equal(#state.recent_contexts, 1)
+
+  state.clear(1)
+  equal(state.recent_contexts, {})
+end)
+
 test("injected source is not recursively parsed for context tokens", function()
   local dispatcher = require("chatforge.core.dispatcher")
   local bufnr = vim.api.nvim_create_buf(false, true)
@@ -102,6 +163,110 @@ test("injected source is not recursively parsed for context tokens", function()
   local prompt = dispatcher.dispatch("review @file", bufnr).prompt
   truthy(prompt:find("@{file missing.lua}", 1, true), "source token should remain literal")
   truthy(not prompt:find("missing.lua} could not be read", 1, true), "injected source must not be expanded")
+end)
+
+test("edit intent stages by default and review intent stays chat", function()
+  local dispatcher = require("chatforge.core.dispatcher")
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_name(bufnr, vim.fn.tempname() .. ".lua")
+  vim.bo[bufnr].filetype = "lua"
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "local value = 1" })
+
+  local edit = dispatcher.dispatch("please update this to return two", bufnr)
+  equal(edit.action, "edit_file")
+  truthy(edit.stage, "edit intent should be stageable")
+  truthy(edit.prompt:find("complete replacement", 1, true), "edit prompt should ask for a full replacement")
+  truthy(edit.prompt:find("local value = 1", 1, true), "edit prompt should include the live buffer")
+
+  local review = dispatcher.dispatch("how is my code @file ?", bufnr)
+  equal(review.action, "chat")
+  truthy(not review.stage, "review intent should not stage by default")
+  truthy(review.prompt:find("local value = 1", 1, true), "explicit context should still be included")
+
+  local context_question = dispatcher.dispatch("use @dir to explain the project layout", bufnr)
+  equal(context_question.action, "chat")
+  truthy(not context_question.stage, "directory explanation should not stage")
+end)
+
+test("forced staging turns a normal prompt into an edit request", function()
+  local dispatcher = require("chatforge.core.dispatcher")
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.bo[bufnr].filetype = "lua"
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "return 1" })
+
+  local forced = dispatcher.dispatch("make this cleaner", bufnr, { force_stage = true })
+  equal(forced.action, "edit_file")
+  truthy(forced.stage, "forced prompt should be stageable")
+  truthy(forced.prompt:find("complete replacement", 1, true), "forced prompt should use edit instructions")
+end)
+
+test("dialog wrapper falls back to native vim.ui", function()
+  package.loaded["chatforge.ui.dialog"] = nil
+  package.loaded["dressing"] = nil
+  local old_input = vim.ui.input
+  local called = false
+  vim.ui.input = function(opts, cb)
+    called = opts.prompt == "Model: "
+    cb("fallback-model")
+  end
+
+  local dialog = require("chatforge.ui.dialog")
+  local value = nil
+  dialog.input({ prompt = "Model: " }, function(model)
+    value = model
+  end)
+
+  vim.ui.input = old_input
+  truthy(called, "native vim.ui.input should be called")
+  equal(value, "fallback-model")
+end)
+
+test("dialog wrapper sets up dressing when available", function()
+  package.loaded["chatforge.ui.dialog"] = nil
+  package.loaded["dressing"] = nil
+  local setup_count = 0
+  package.preload["dressing"] = function()
+    return {
+      setup = function()
+        setup_count = setup_count + 1
+      end,
+    }
+  end
+
+  local old_select = vim.ui.select
+  vim.ui.select = function(items, _, cb)
+    cb(items[1])
+  end
+
+  local dialog = require("chatforge.ui.dialog")
+  local choice = nil
+  dialog.select({ "one", "two" }, { prompt = "Pick:" }, function(selected)
+    choice = selected
+  end)
+  dialog.select({ "one", "two" }, { prompt = "Pick:" }, function() end)
+
+  vim.ui.select = old_select
+  package.preload["dressing"] = nil
+  package.loaded["dressing"] = nil
+
+  equal(choice, "one")
+  equal(setup_count, 1, "dressing should be set up once")
+end)
+
+test("chat input uses local completion menu settings", function()
+  local state = reset_state()
+  local chat = require("chatforge.ui.chat")
+  local source = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_set_current_buf(source)
+
+  chat.open(source)
+
+  truthy(state.input_bufnr and vim.api.nvim_buf_is_valid(state.input_bufnr), "input buffer should exist")
+  equal(vim.bo[state.input_bufnr].completeopt, "menuone,noinsert,noselect")
+
+  if state.chat_winnr and vim.api.nvim_win_is_valid(state.chat_winnr) then
+    vim.api.nvim_win_close(state.chat_winnr, true)
+  end
 end)
 
 test("sessions remain isolated by source buffer", function()

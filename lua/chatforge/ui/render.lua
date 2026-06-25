@@ -146,7 +146,30 @@ local function append_entry(entry)
       and vim.api.nvim_win_get_buf(state.chat_winnr) == state.chat_bufnr then
     local cursor_line = math.max(vim.api.nvim_buf_line_count(state.chat_bufnr), 1)
     vim.api.nvim_win_set_cursor(state.chat_winnr, { cursor_line, 3 })
+    M.clamp_scroll()
   end
+end
+
+function M.clamp_scroll()
+  local w = state.chat_winnr
+  local b = state.chat_bufnr
+  if not w or not b or not vim.api.nvim_win_is_valid(w) or not vim.api.nvim_buf_is_valid(b) then
+    return
+  end
+  if vim.api.nvim_win_get_buf(w) ~= b then
+    return
+  end
+
+  local line_count = vim.api.nvim_buf_line_count(b)
+  local height = math.max(vim.api.nvim_win_get_height(w), 1)
+  local max_topline = math.max(line_count - height + 1, 1)
+  vim.api.nvim_win_call(w, function()
+    local view = vim.fn.winsaveview()
+    if view.topline > max_topline then
+      view.topline = max_topline
+      vim.fn.winrestview(view)
+    end
+  end)
 end
 
 message_lines = function(content, opts)
@@ -241,7 +264,7 @@ function M.append_segments(segments)
       n_blocks = n_blocks + 1
       local block = state.pending_blocks[block_index]
       if block and block.stageable == false then
-        table.insert(text_parts, string.format("Example code #%d:", block_index))
+        table.insert(text_parts, string.format("Example code #%d. Preview with :ChatPreview %d.", block_index, block_index))
         table.insert(text_parts, string.format("```%s\n%s\n```", seg.lang or "", seg.content or ""))
       else
         local suffix = ""
@@ -249,10 +272,11 @@ function M.append_segments(segments)
           suffix = " -> " .. block.target_file
         end
         table.insert(text_parts, string.format("Implementation #%d ready%s.", block_index, suffix))
-        table.insert(text_parts, string.format("Preview: :ChatPreview %d.", block_index))
+        table.insert(text_parts, string.format("Preview this block: :ChatPreview %d.", block_index))
+        table.insert(text_parts, string.format("Review this block: :ChatDiff %d.", block_index))
         table.insert(text_parts, string.format("```%s\n%s\n```", seg.lang or "", seg.content or ""))
         if not staged_hint_rendered then
-          table.insert(text_parts, string.format("Review staged change: :ChatAccept, :ChatReject, :ChatDiff %d.", block_index))
+          table.insert(text_parts, "If this block is staged in the source buffer, keep it with :ChatAccept or restore the old text with :ChatReject.")
           staged_hint_rendered = true
           has_actions = true
         end
