@@ -6,6 +6,8 @@ local dispatcher = require("chatforge.core.dispatcher")
 local parser     = require("chatforge.core.parser")
 local actions    = require("chatforge.core.actions")
 local log        = require("chatforge.utils.logger")
+
+local INPUT_HEIGHT = 8
  
 -- ── buffer / window ────────────────────────────────────────────────────────
  
@@ -27,6 +29,7 @@ local function create_input_buf()
   vim.bo[b].bufhidden  = "hide"
   vim.bo[b].swapfile   = false
   vim.bo[b].modifiable = true
+  vim.bo[b].completeopt = "menuone,noinsert,noselect"
   vim.api.nvim_buf_set_lines(b, 0, -1, false, { "" })
   return b
 end
@@ -62,7 +65,7 @@ local function open_chat_windows(chat_bufnr, input_bufnr)
   vim.cmd("belowright split")
   local input_w = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(input_w, input_bufnr)
-  vim.cmd("resize 6")
+  vim.cmd("resize " .. INPUT_HEIGHT)
   configure_input_window(input_w)
 
   vim.api.nvim_set_current_win(chat_w)

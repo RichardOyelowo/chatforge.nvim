@@ -26,7 +26,7 @@ ChatForge keeps an Ollama conversation for each source buffer. Edit requests
 stream into the live Neovim buffer as marked proposals. Accept writes a fresh
 proposal to disk. Reject restores its saved original lines in memory.
 
-Version 0.1.0 supports one Ollama backend. It handles one active request and
+Version 0.2.0 supports one Ollama backend. It handles one active request and
 one staged edit workflow at a time. Chat and model state last only for the
 current Neovim process.
 
@@ -48,7 +48,7 @@ lazy.nvim example: >lua
 
   {
     "RichardOyelowo/chatforge.nvim",
-    version = "v0.1.0",
+    version = "v0.2.0",
     cmd = {
       "Chat", "ChatSend", "ChatEdit", "ChatModel", "ChatReset",
       "ChatApply", "ChatAccept", "ChatDiff", "ChatReviewDiff",
@@ -106,8 +106,8 @@ Use |:ChatReject| instead if the proposal is wrong.
 =============================================================================
 CHAT WORKFLOW                                        *chatforge-workflow*
 
-|:Chat| opens a 65-column vertical split on the right. The chat is above a
-six-line message pane. Both temporary buffers have `filetype=markdown` and
+|:Chat| opens a 65-column vertical split on the right. The chat is above an
+eight-line message pane. Both temporary buffers have `filetype=markdown` and
 `buftype=nofile`.
 
 The source buffer that opens ChatForge owns the conversation and model choice.
@@ -127,6 +127,9 @@ Message-pane mappings:
 
   ENTER     Send. When completion is visible, accept its item first.
   CTRL-J    Insert a newline.
+
+Completion uses buffer-local menu settings. ChatForge does not change the
+user's global completion UI.
 
 Normal-mode editing keys in the read-only chat pane redirect to the input.
 ChatForge defines no global mappings.
@@ -185,7 +188,7 @@ Use braces for a named directory: >vim
 <
 Named directory paths stay under |:pwd|. A leading slash is stripped, so
 `@{dir /lua}` means `<cwd>/lua`. Absolute directory paths, `~`, and environment
-variable expansion are not supported in version 0.1.0.
+variable expansion are not supported in version 0.2.0.
 
 Directory listings are not recursive. One read returns at most 64 entries.
 
@@ -273,7 +276,7 @@ buffer state. Staged metadata remains available. |:ChatDiff| compares the saved
 original snapshot with the proposal. It does not include the newer user-edited
 buffer.
 
-Version 0.1.0 has no force-accept or force-reject command.
+Version 0.2.0 has no force-accept or force-reject command.
 
 =============================================================================
 REVIEW COMMANDS                                         *chatforge-review*
@@ -353,7 +356,7 @@ Commands for review are documented at |chatforge-review|.
 :ChatBackend status  Show tracked Ollama server and model-pull job states.
 :ChatBackend start   Show `ollama serve`. It does not start a server.
 :ChatBackend stop    Stop a plugin-managed model pull or server job. Version
-                     0.1.0 does not create a server job itself.
+                     0.2.0 does not create a server job itself.
 
 When Ollama is unreachable, ChatForge can show `ollama serve` or ignore the
 error. When a model is missing, it can run `ollama pull <model>` as a Neovim
@@ -363,7 +366,7 @@ plugin-managed pull. It cannot stop a server started in another terminal.
 =============================================================================
 CONFIGURATION                                           *chatforge-config*
 
-All fields are optional. Version 0.1.0 defaults: >lua
+All fields are optional. Version 0.2.0 defaults: >lua
 
   require("chatforge").setup({
     default_model = "llama3",
@@ -412,7 +415,7 @@ Show `[chatforge]` dispatch, request, parser, and backend notifications.
 `system_prompt` ~
 System message prepended to every request. Use an empty string to omit it.
 
-Unknown fields remain in the merged configuration but version 0.1.0 does not
+Unknown fields remain in the merged configuration but version 0.2.0 does not
 use them.
 
 =============================================================================
@@ -449,7 +452,7 @@ The check reports:
 - default model presence in the returned model list
 - render-markdown.nvim and dressing.nvim detection
 
-The state-directory check is diagnostic. Version 0.1.0 keeps conversations in
+The state-directory check is diagnostic. Version 0.2.0 keeps conversations in
 memory and does not persist them in that directory.
 
 =============================================================================

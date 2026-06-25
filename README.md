@@ -6,7 +6,7 @@ Local-first, staged coding chat for Neovim.
 
 chatforge.nvim keeps an Ollama conversation attached to each source buffer. Edit requests stream into the live Neovim buffer as a marked proposal. You can preview, diff, accept, or reject that proposal before it reaches disk.
 
-Version 0.1.0 supports one Ollama backend and one staged buffer change at a time.
+Version 0.2.0 supports one Ollama backend and one staged buffer change at a time.
 
 ## Why it exists
 
@@ -18,7 +18,7 @@ Context is explicit. Use `@file` or `@dir` when the model needs source or projec
 
 - Neovim 0.10 or newer
 - `curl` in `$PATH`
-- [Ollama](https://ollama.com) for the v0.1.0 backend
+- [Ollama](https://ollama.com) for the v0.2.0 backend
 - An installed Ollama model, such as `llama3`
 
 Optional:
@@ -35,7 +35,7 @@ Neither optional plugin is required. Both are reported by `:checkhealth chatforg
 ```lua
 {
   "RichardOyelowo/chatforge.nvim",
-  version = "v0.1.0",
+  version = "v0.2.0",
   cmd = {
     "Chat",
     "ChatSend",
@@ -118,7 +118,7 @@ Use `:ChatReject` instead if the proposal is wrong.
 
 ## Normal chat workflow
 
-`:Chat` opens a 65-column vertical split on the right. The chat occupies the upper window. A six-line message pane sits below it. Both buffers use the `markdown` filetype and are temporary `nofile` buffers.
+`:Chat` opens a 65-column vertical split on the right. The chat occupies the upper window. An eight-line message pane sits below it. Both buffers use the `markdown` filetype and are temporary `nofile` buffers.
 
 The source buffer that opened the chat owns the conversation and model choice. Open ChatForge from another source buffer to switch sessions. Session state lives only in the current Neovim process.
 
@@ -134,6 +134,7 @@ The message pane has buffer-local behavior:
 - `<Enter>` sends. If completion is visible, it accepts the selected completion item first.
 - `<C-j>` inserts a newline.
 - Typing an `@` reference opens context completion.
+- Completion uses buffer-local menu settings so it does not change the user's global completion UI.
 
 ChatForge sets no global keymaps.
 
@@ -187,7 +188,7 @@ Use braces for a named directory:
 :ChatSend inspect @{dir source files}
 ```
 
-Named directory paths are always resolved under Neovim's current working directory. A leading slash is stripped, so `@{dir /lua}` means `<cwd>/lua`. Absolute directory paths, `~`, and environment variable expansion are not supported in v0.1.0.
+Named directory paths are always resolved under Neovim's current working directory. A leading slash is stripped, so `@{dir /lua}` means `<cwd>/lua`. Absolute directory paths, `~`, and environment variable expansion are not supported in v0.2.0.
 
 Directory context is not recursive. One read returns at most 64 entries. Use another `@{dir path}` reference for a nested directory.
 
@@ -218,7 +219,7 @@ ChatForge classifies the start of each message. Matching is case-insensitive.
 
 Automatic current-buffer context is capped at 160 lines. For a larger buffer, ChatForge sends a 160-line window around the visible cursor. Bare `@file` sends the full live buffer and bypasses that cap.
 
-Target paths after `edit file` and `create file` stop at whitespace. Paths with spaces cannot be staging targets in v0.1.0. A braced file reference adds context only. It does not select the staging target.
+Target paths after `edit file` and `create file` stop at whitespace. Paths with spaces cannot be staging targets in v0.2.0. A braced file reference adds context only. It does not select the staging target.
 
 ## Live staging and disk writes
 
@@ -299,7 +300,7 @@ ChatForge records the target buffer's `changedtick` after staging finishes. Any 
 
 Accept and Reject stop when the proposal is stale. They do not overwrite the newer buffer state. The staged metadata stays available. `:ChatDiff N` still compares the original snapshot with the proposal, not the newer user-edited buffer.
 
-There is no force-accept or force-reject command in v0.1.0. Review the diff, then resolve the buffer manually if it became stale.
+There is no force-accept or force-reject command in v0.2.0. Review the diff, then resolve the buffer manually if it became stale.
 
 ## Commands
 
@@ -322,15 +323,15 @@ There is no force-accept or force-reject command in v0.1.0. Review the diff, the
 
 ## Backend and model recovery
 
-If Ollama is unreachable, ChatForge opens a `vim.ui.select` prompt with two choices: show `ollama serve`, or ignore the error. `:ChatBackend start` also shows the command. It does not start an Ollama server in v0.1.0.
+If Ollama is unreachable, ChatForge opens a `vim.ui.select` prompt with two choices: show `ollama serve`, or ignore the error. `:ChatBackend start` also shows the command. It does not start an Ollama server in v0.2.0.
 
 If Ollama reports a missing model, ChatForge can start `ollama pull <model>` as a Neovim job, show the command only, or ignore it. `:ChatBackend stop` can stop that plugin-managed pull. It cannot stop an Ollama server started in another terminal.
 
-`:ChatBackend status` reports whether ChatForge tracks a server job and whether a model pull is running. Since v0.1.0 does not start the server itself, server status normally reads `not-managed` even when Ollama is reachable.
+`:ChatBackend status` reports whether ChatForge tracks a server job and whether a model pull is running. Since v0.2.0 does not start the server itself, server status normally reads `not-managed` even when Ollama is reachable.
 
 ## Configuration
 
-All fields are optional. These are the v0.1.0 defaults:
+All fields are optional. These are the v0.2.0 defaults:
 
 ```lua
 require("chatforge").setup({
@@ -366,7 +367,7 @@ require("chatforge").setup({
 | `debug` | Show `[chatforge]` request, dispatch, parser, and backend notifications. |
 | `system_prompt` | System message prepended to every request. Set it to an empty string to omit the system message. |
 
-Unknown fields are retained by the config merge but are not used by v0.1.0.
+Unknown fields are retained by the config merge but are not used by v0.2.0.
 
 ## Health check
 
@@ -386,7 +387,7 @@ The check reports:
 - whether `default_model` appears in the returned model list
 - whether render-markdown.nvim and dressing.nvim are on `runtimepath`
 
-The writable state directory is a setup diagnostic. ChatForge v0.1.0 keeps chat sessions in memory and does not persist them there.
+The writable state directory is a setup diagnostic. ChatForge v0.2.0 keeps chat sessions in memory and does not persist them there.
 
 ## Testing
 

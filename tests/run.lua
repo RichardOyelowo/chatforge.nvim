@@ -192,6 +192,22 @@ test("dialog wrapper sets up dressing when available", function()
   equal(setup_count, 1, "dressing should be set up once")
 end)
 
+test("chat input uses local completion menu settings", function()
+  local state = reset_state()
+  local chat = require("chatforge.ui.chat")
+  local source = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_set_current_buf(source)
+
+  chat.open(source)
+
+  truthy(state.input_bufnr and vim.api.nvim_buf_is_valid(state.input_bufnr), "input buffer should exist")
+  equal(vim.bo[state.input_bufnr].completeopt, "menuone,noinsert,noselect")
+
+  if state.chat_winnr and vim.api.nvim_win_is_valid(state.chat_winnr) then
+    vim.api.nvim_win_close(state.chat_winnr, true)
+  end
+end)
+
 test("sessions remain isolated by source buffer", function()
   local state = reset_state()
   local first = vim.api.nvim_create_buf(false, true)
