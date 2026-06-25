@@ -46,6 +46,7 @@ local function reset_state()
   state.chat_entries = {}
   state.pending_blocks = {}
   state.staged_changes = {}
+  state.recent_contexts = {}
   state.streaming_change = nil
   state.edit_target = nil
   state.applying = false
@@ -92,6 +93,66 @@ test("named file context uses braced syntax and supports spaces", function()
   truthy(prompt:find("please", 1, true), "text after named context should remain")
   truthy(not prompt:find("CHATFORGE_CONTEXT", 1, true), "internal placeholders must not leak")
   vim.fn.delete(path)
+end)
+
+test("afile shorthand injects named file context", function()
+  local dispatcher = require("chatforge.core.dispatcher")
+  local path = vim.fn.tempname() .. " shorthand.html"
+  vim.fn.writefile({ "<main class=\"content\"></main>" }, path)
+
+  local result = dispatcher.dispatch("review {afile " .. path .. "}", vim.api.nvim_get_current_buf())
+  truthy(result.prompt:find("<main class=\"content\"></main>", 1, true), "afile shorthand should inject file content")
+  equal(#result.contexts, 1)
+
+  vim.fn.delete(path)
+end)
+
+test("related file context carries across buffers", function()
+  local dispatcher = require("chatforge.core.dispatcher")
+  local state = reset_state()
+  local html_path = vim.fn.tempname() .. ".html"
+  vim.fn.writefile({ "<button class=\"btn_primary\" id=\"save_btn\">Save</button>" }, html_path)
+
+  local html_buf = vim.api.nvim_create_buf(false, true)
+  local first = dispatcher.dispatch("this is the html @{file " .. html_path .. "}", html_buf)
+  state.remember_contexts(first.contexts)
+
+  local css_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_name(css_buf, vim.fn.tempname() .. ".css")
+  vim.bo[css_buf].filetype = "css"
+  vim.api.nvim_buf_set_lines(css_buf, 0, -1, false, { ".btn_primary { color: white; }" })
+
+  local second = dispatcher.dispatch("does this css match the html @file?", css_buf, {
+    related_contexts = state.recent_contexts,
+  })
+
+  truthy(second.prompt:find(".btn_primary { color: white; }", 1, true), "current css should be included")
+  truthy(second.prompt:find("save_btn", 1, true), "recent html should be included")
+
+  vim.fn.delete(html_path)
+end)
+
+test("source text does not control intent classification", function()
+  local dispatcher = require("chatforge.core.dispatcher")
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_name(bufnr, vim.fn.tempname() .. ".lua")
+  vim.bo[bufnr].filetype = "lua"
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "-- please update this later", "return true" })
+
+  local result = dispatcher.dispatch("review @file", bufnr)
+  equal(result.action, "chat")
+  truthy(not result.stage, "review should not stage because source text contains edit words")
+end)
+
+test("chat reset clears remembered related file context", function()
+  local state = reset_state()
+  state.remember_contexts({
+    { path = "one.html", block = "html" },
+  })
+  equal(#state.recent_contexts, 1)
+
+  state.clear(1)
+  equal(state.recent_contexts, {})
 end)
 
 test("injected source is not recursively parsed for context tokens", function()

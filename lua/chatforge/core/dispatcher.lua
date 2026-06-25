@@ -224,6 +224,7 @@ end
 -- interpreted as a path: "review @file fully" means current buffer + "fully".
 local function resolve_at_mentions(input, src_bufnr)
   local injections = {}
+  local contexts = {}
   local resolved   = input
   local placeholders = {}
   local placeholder_count = 0
@@ -241,13 +242,15 @@ local function resolve_at_mentions(input, src_bufnr)
     local content = buf_u.get_content(src_bufnr)
     table.insert(injections, { tag = "@file", path = path_label or "(current buffer)", ok = true })
     local display_name = name ~= "" and name or "(unnamed)"
-    return hold(string.format(
+    local block = string.format(
       "\n\n[ChatForge context: current live Neovim buffer %s. This is accessible user-provided code.]\nFile: %s\n```%s\n%s\n```",
       display_name,
       display_name,
       ft,
       content
-    ))
+    )
+    table.insert(contexts, { path = display_name, block = block })
+    return hold(block)
   end
 
   local function trim(value)
@@ -267,13 +270,37 @@ local function resolve_at_mentions(input, src_bufnr)
     end
     local ft = vim.filetype.match({ filename = path }) or ""
     table.insert(injections, { tag = "@{file}", path = path, ok = true })
-    return hold(string.format(
+    local block = string.format(
       "\n\n[ChatForge context: named file %s. This is accessible user-provided code.]\nFile: %s\n```%s\n%s\n```",
       path,
       path,
       ft,
       contents
-    ))
+    )
+    table.insert(contexts, { path = vim.fn.expand(path), block = block })
+    return hold(block)
+  end)
+
+  resolved = resolved:gsub("{[aA][fF][iI][lL][eE]%s+([^}]*)}", function(raw_path)
+    local path = trim(raw_path)
+    if is_current_file_ref(path) then
+      return current_file_block("(current buffer)")
+    end
+    local contents, err = read_file(path)
+    if err then
+      return hold("\n<!-- {afile " .. path .. "} could not be read: " .. err .. " -->")
+    end
+    local ft = vim.filetype.match({ filename = path }) or ""
+    table.insert(injections, { tag = "{afile}", path = path, ok = true })
+    local block = string.format(
+      "\n\n[ChatForge context: named file %s. This is accessible user-provided code.]\nFile: %s\n```%s\n%s\n```",
+      path,
+      path,
+      ft,
+      contents
+    )
+    table.insert(contexts, { path = vim.fn.expand(path), block = block })
+    return hold(block)
   end)
 
   resolved = resolved:gsub("@%{[dD][iI][rR]%s*([^}]*)%}", function(raw_path)
@@ -321,7 +348,50 @@ local function resolve_at_mentions(input, src_bufnr)
     resolved = resolved:gsub(vim.pesc(key), block)
   end
 
-  return resolved, injections
+  return resolved, injections, contexts
+end
+
+local function should_include_related_context(input)
+  local lower = (input or ""):lower()
+  return lower:match("match")
+    or lower:match("related")
+    or lower:match("previous")
+    or lower:match("worked%s+on")
+    or lower:match("both")
+    or lower:match("html")
+    or lower:match("css")
+    or lower:match("@file")
+    or lower:match("@%{file")
+    or lower:match("{afile")
+end
+
+local function add_related_contexts(input, related_contexts, current_contexts)
+  if not should_include_related_context(input) or type(related_contexts) ~= "table" then
+    return input
+  end
+
+  local current_paths = {}
+  for _, context in ipairs(current_contexts or {}) do
+    current_paths[context.path] = true
+  end
+
+  local blocks = {}
+  for _, context in ipairs(related_contexts) do
+    if context.path and context.block and not current_paths[context.path] then
+      table.insert(blocks, context.block)
+    end
+    if #blocks >= 3 then
+      break
+    end
+  end
+
+  if #blocks == 0 then
+    return input
+  end
+
+  return input
+    .. "\n\n[ChatForge related context from recently shared files. Use this only when the user asks about relationships between files.]"
+    .. table.concat(blocks, "")
 end
 
 local function build_prompt(input, action, src_bufnr)
@@ -368,24 +438,31 @@ end
 function M.dispatch(input, src_bufnr, opts)
   opts = opts or {}
   -- 1. Resolve @file / @dir mentions first
-  local resolved, injections = resolve_at_mentions(input, src_bufnr)
+  local resolved, injections, contexts = resolve_at_mentions(input, src_bufnr)
   for _, inj in ipairs(injections) do
     log.log("dispatch: injected %s %s", inj.tag, inj.path)
   end
 
-  -- 2. Classify action
-  local action, target = classify(resolved)
+  -- 2. Classify action from the user's words, not injected source text.
+  local action, target = classify(input)
   if opts.force_stage and action ~= "create_file" and action ~= "delete_file" then
     action = "edit_file"
     target = nil
   end
 
   -- 3. Enrich with buffer content for edit/explain actions
+  resolved = add_related_contexts(resolved, opts.related_contexts, contexts)
   local prompt = build_prompt(resolved, action, src_bufnr)
 
   log.log("dispatch: action=%s target=%s", action, target or "nil")
 
-  return { action = action, prompt = prompt, target = target, stage = action == "edit_file" or action == "create_file" }
+  return {
+    action = action,
+    prompt = prompt,
+    target = target,
+    stage = action == "edit_file" or action == "create_file",
+    contexts = contexts,
+  }
 end
 
 return M

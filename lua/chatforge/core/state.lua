@@ -22,6 +22,7 @@ M.applying      = false
 M.edit_target   = nil  ---@type {bufnr:number,line1:number,line2:number,kind:string}|nil
 M.pending_blocks = {}  ---@type {lang:string,content:string,applied:boolean,target:table|nil}[]
 M.staged_changes = {}  ---@type table<number, table>
+M.recent_contexts = {}
 M.streaming_change = nil
 M.ollama_job = nil
 M.ollama_pull_job = nil
@@ -48,10 +49,32 @@ function M.append_message(bufnr, role, content, display)
   table.insert(M.get_buf(bufnr).history, { role = role, content = content, display = display })
 end
 
+function M.remember_contexts(contexts)
+  if type(contexts) ~= "table" then
+    return
+  end
+
+  for _, context in ipairs(contexts) do
+    if context.path and context.block then
+      for i = #M.recent_contexts, 1, -1 do
+        if M.recent_contexts[i].path == context.path then
+          table.remove(M.recent_contexts, i)
+        end
+      end
+      table.insert(M.recent_contexts, 1, context)
+    end
+  end
+
+  while #M.recent_contexts > 4 do
+    table.remove(M.recent_contexts)
+  end
+end
+
 function M.clear(bufnr)
   if M.buffers[bufnr] then M.buffers[bufnr].history = {} end
   M.pending_blocks = {}
   M.staged_changes = {}
+  M.recent_contexts = {}
   M.edit_target = nil
   M.last_status_entry = nil
 end

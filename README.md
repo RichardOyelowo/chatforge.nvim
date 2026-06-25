@@ -165,6 +165,8 @@ Use braces for a named file:
 
 Named files are read from disk. Relative paths use Neovim's current working directory. Absolute paths, `~`, and environment variables use `vim.fn.expand()`.
 
+ChatForge also accepts `{afile path}` as a compatibility shorthand for named file context.
+
 `@{file .}`, `@{file /}`, and an empty file reference mean the current live buffer. This special `/` meaning applies only to file context. It does not mean the filesystem root.
 
 A missing or unreadable file becomes an inline HTML context error in the model prompt. The request still runs.
@@ -199,6 +201,10 @@ The message pane scans the current working directory recursively and offers up t
 The completion list is cached for the current working directory. New files may not appear until the working directory changes or Neovim restarts. You can always type a reference manually.
 
 Injected source is protected from a second context pass. An `@{file ...}` string inside source code remains literal and cannot pull in another file.
+
+### Related file context
+
+When a message shares file context with `@file`, `@{file path}`, or `{afile path}`, ChatForge remembers the most recent files in the current Neovim session. Later prompts that clearly ask about file relationships, such as whether CSS matches HTML, include those recent files as related context. `:ChatReset` clears this remembered context.
 
 ## Intent and automatic context
 

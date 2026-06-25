@@ -318,7 +318,10 @@ local function do_send(src_bufnr, input, opts)
   state.request_id = state.request_id + 1
   local request_id = state.request_id
   local model      = state.get_model(src_bufnr)
-  local dispatched = dispatcher.dispatch(input, src_bufnr, { force_stage = opts.force_stage == true })
+  local dispatched = dispatcher.dispatch(input, src_bufnr, {
+    force_stage = opts.force_stage == true,
+    related_contexts = state.recent_contexts,
+  })
   local edit_target = state.edit_target
   state.edit_target = nil
   if edit_target then
@@ -403,6 +406,7 @@ local function do_send(src_bufnr, input, opts)
     end
     state.append_message(src_bufnr, "user", dispatched.prompt, input)
     state.append_message(src_bufnr, "assistant", text)
+    state.remember_contexts(dispatched.contexts)
     if stream and stream.in_code and stream.started and not stream.finished then
       if stream.buffer ~= "" and not stream.buffer:match("^```") then
         stream.block.content = stream.block.content .. stream.buffer

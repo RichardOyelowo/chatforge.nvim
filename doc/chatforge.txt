@@ -165,6 +165,9 @@ Use braces for a named file: >vim
 Named files are read from disk. Relative paths use |:pwd|. Absolute paths,
 `~`, and environment variables use `vim.fn.expand()`.
 
+ChatForge also accepts `{afile path}` as a compatibility shorthand for named
+file context.
+
 `@{file .}`, `@{file /}`, and an empty file reference mean the current live
 buffer. `/` does not mean the filesystem root in this special form.
 
@@ -201,6 +204,14 @@ first. Directories come before files. Paths under `.git` are skipped.
 The list is cached for the current working directory. New paths may not appear
 until the working directory changes or Neovim restarts. Manual references still
 work.
+
+RELATED FILE CONTEXT                              *chatforge-related-context*
+
+When a message shares file context with `@file`, `@{file path}`, or
+`{afile path}`, ChatForge remembers the most recent files in the current Neovim
+session. Later prompts that clearly ask about file relationships, such as
+whether CSS matches HTML, include those recent files as related context.
+|:ChatReset| clears this remembered context.
 
 =============================================================================
 INTENT AND AUTOMATIC CONTEXT                           *chatforge-intent*

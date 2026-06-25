@@ -27,6 +27,7 @@ chatforge-intent	chatforge.txt	/*chatforge-intent*
 chatforge-limitations	chatforge.txt	/*chatforge-limitations*
 chatforge-optional-ui	chatforge.txt	/*chatforge-optional-ui*
 chatforge-quick-start	chatforge.txt	/*chatforge-quick-start*
+chatforge-related-context	chatforge.txt	/*chatforge-related-context*
 chatforge-review	chatforge.txt	/*chatforge-review*
 chatforge-setup	chatforge.txt	/*chatforge-setup*
 chatforge-staged-edits	chatforge.txt	/*chatforge-staged-edits*
