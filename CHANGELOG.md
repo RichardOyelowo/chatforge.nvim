@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-06-26
+
+### Fixed
+
+- Whole-file model responses for inferred live edits now replace the matching source buffer instead of appending a duplicate copy at the cursor.
+- Changed-line highlights still mark only the proposed differences after a whole-file rewrite is detected.
+- Reject restores the original whole buffer after an inferred whole-file rewrite.
+
 ## [0.2.1] - 2026-06-26
 
 ### Fixed
@@ -75,7 +83,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Normal prose after bare `@file` is never interpreted as a path.
 - Stale Accept and Reject operations stop before overwriting newer buffer edits.
 
-[Unreleased]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/RichardOyelowo/chatforge.nvim/releases/tag/v0.1.0

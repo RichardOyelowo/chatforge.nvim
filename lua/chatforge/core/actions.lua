@@ -162,6 +162,57 @@ local function add_proposed_highlight(bufnr, start_idx, line_count, marks)
   end
 end
 
+local function meaningful_line(line)
+  local trimmed = (line or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  if trimmed == "" then
+    return nil
+  end
+  if trimmed:match("^#") or trimmed:match("^//") or trimmed:match("^%-%-") then
+    return nil
+  end
+  return trimmed
+end
+
+local function significant_lines(lines)
+  local result = {}
+  for _, line in ipairs(lines) do
+    local meaningful = meaningful_line(line)
+    if meaningful then
+      table.insert(result, meaningful)
+    end
+  end
+  return result
+end
+
+local function looks_like_whole_file(original, proposed)
+  if #original < 4 or #proposed < 4 then
+    return false
+  end
+  if #proposed < math.floor(#original * 0.65) then
+    return false
+  end
+
+  local original_sig = significant_lines(original)
+  local proposed_sig = significant_lines(proposed)
+  if #original_sig < 3 or #proposed_sig < 3 then
+    return false
+  end
+
+  local proposed_seen = {}
+  for _, line in ipairs(proposed_sig) do
+    proposed_seen[line] = true
+  end
+
+  local common = 0
+  for _, line in ipairs(original_sig) do
+    if proposed_seen[line] then
+      common = common + 1
+    end
+  end
+
+  return common >= 3 and (common / #original_sig) >= 0.55
+end
+
 local function clear_proposed_highlight(change)
   if change and change.bufnr and vim.api.nvim_buf_is_valid(change.bufnr) then
     vim.api.nvim_buf_clear_namespace(change.bufnr, NS, 0, -1)
@@ -252,6 +303,19 @@ local function stage_range(bufnr, target, block)
   return insert_at, insert_at, "insert"
 end
 
+local function stage_range_for_lines(bufnr, target, block, lines)
+  local start_idx, end_idx, mode = stage_range(bufnr, target, block)
+  if mode ~= "insert" then
+    return start_idx, end_idx, mode
+  end
+
+  local original = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  if looks_like_whole_file(original, lines) then
+    return 0, -1, "replace"
+  end
+  return start_idx, end_idx, mode
+end
+
 local function remove_eof_blank_after_replace(bufnr, start_idx, inserted_count, end_idx, original_line_count)
   if end_idx ~= -1 and end_idx < original_line_count then
     return
@@ -275,7 +339,7 @@ local function write_lines_live(bufnr, lines, target, opts, on_done)
   vim.bo[bufnr].modifiable = true
   local block = state.pending_blocks[opts.block_index or 1]
   local original_line_count = vim.api.nvim_buf_line_count(bufnr)
-  local start_idx, end_idx, mode = stage_range(bufnr, target, block)
+  local start_idx, end_idx, mode = stage_range_for_lines(bufnr, target, block, lines)
   local original_changedtick = vim.api.nvim_buf_get_changedtick(bufnr)
   local original = vim.api.nvim_buf_get_lines(bufnr, start_idx, end_idx, false)
   vim.api.nvim_buf_set_lines(bufnr, start_idx, end_idx, false, {})
@@ -372,6 +436,7 @@ function M.start_stream_preview(idx, block)
   local start_idx, end_idx, mode = stage_range(bufnr, target, block)
   local original_changedtick = vim.api.nvim_buf_get_changedtick(bufnr)
   local original = vim.api.nvim_buf_get_lines(bufnr, start_idx, end_idx, false)
+  local full_original = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   vim.api.nvim_buf_set_lines(bufnr, start_idx, end_idx, false, {})
 
   state.streaming_change = {
@@ -382,6 +447,7 @@ function M.start_stream_preview(idx, block)
     end_idx = end_idx,
     insert_at = start_idx,
     original = original,
+    full_original = full_original,
     original_line_count = original_line_count,
     original_changedtick = original_changedtick,
     mode = mode,
@@ -425,6 +491,15 @@ function M.finish_stream_preview()
 
   if stream.mode == "replace" then
     remove_eof_blank_after_replace(stream.bufnr, stream.start_idx, #stream.lines, stream.end_idx, stream.original_line_count)
+  elseif looks_like_whole_file(stream.full_original, stream.lines) then
+    vim.bo[stream.bufnr].modifiable = true
+    vim.api.nvim_buf_set_lines(stream.bufnr, stream.start_idx, stream.start_idx + #stream.lines, false, {})
+    vim.api.nvim_buf_set_lines(stream.bufnr, 0, -1, false, stream.lines)
+    stream.start_idx = 0
+    stream.end_idx = -1
+    stream.original = stream.full_original
+    stream.mode = "replace"
+    remove_eof_blank_after_replace(stream.bufnr, 0, #stream.lines, -1, #stream.full_original)
   end
 
   vim.bo[stream.bufnr].modifiable = stream.was_modifiable

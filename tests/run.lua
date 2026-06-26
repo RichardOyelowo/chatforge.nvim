@@ -369,6 +369,98 @@ test("inferred streamed staging inserts without clearing the file", function()
   })
 end)
 
+test("inferred whole-file stream replaces instead of duplicating", function()
+  local state = reset_state()
+  local actions = require("chatforge.core.actions")
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  local original = {
+    "import datetime as dt",
+    "import smtplib",
+    "from random import randint",
+    "import pandas",
+    "",
+    "#................................. converting csv to dictionary ............................................",
+    "data = pandas.read_csv(\"birthdays.csv\")",
+    "pandas.DataFrame(data)",
+    "data_dict = data.to_dict(\"records\")",
+    "",
+    "#.................................. working with birthday_date .............................................",
+    "now = dt.datetime.now()",
+    "",
+    "for item in data_dict: # loops through each dict in list",
+    "    if item['month'] == now.month and item['day'] == now.day: # finds the value of this key in the dict",
+    "        celebrant = item['name'] # picks the str assigned to the name key",
+    "        email = item['email'] # picks the str assigned to the email key",
+    "        with open(f\"letter_templates/letter_{randint(1,3)}.txt\") as content:",
+    "            letter = content.read()",
+    "            letter = letter.replace(\"[NAME]\", celebrant)",
+    "        # print(letter) # for debugging",
+    "",
+    "        with smtplib.SMTP(\"smtp.gmail.com\") as connection:",
+    "            connection.starttls()",
+    "            connection.login(\"richaffiliations@gmail.com\", \"zzdbtxgjnpurtfus\")",
+    "            connection.sendmail(\"richaffiliations@gmial.com\",f\"{email}\",",
+    "                                f\"subject: Happy Birthday!\\n\\n{letter}\")",
+  }
+  local proposed = {
+    "import datetime as dt",
+    "import smtplib",
+    "from random import randint",
+    "import pandas",
+    "",
+    "# Convert CSV data to list of dictionaries",
+    "data = pandas.read_csv(\"birthdays.csv\")",
+    "data_dict = data.to_dict(\"records\")",
+    "",
+    "# Check each birthday entry against current date",
+    "now = dt.datetime.now()",
+    "",
+    "for item in data_dict:",
+    "    # If today matches a birthday, send email",
+    "    if item['month'] == now.month and item['day'] == now.day:",
+    "        celebrant = item['name']",
+    "        email = item['email']",
+    "",
+    "        # Read random letter template and replace placeholder",
+    "        with open(f\"letter_templates/letter_{randint(1,3)}.txt\") as content:",
+    "            letter = content.read()",
+    "            letter = letter.replace(\"[NAME]\", celebrant)",
+    "",
+    "        # Send birthday email",
+    "        with smtplib.SMTP(\"smtp.gmail.com\") as connection:",
+    "            connection.starttls()",
+    "            connection.login(\"richaffiliations@gmail.com\", \"zzdbtxgjnpurtfus\")",
+    "            connection.sendmail(\"richaffiliations@gmail.com\", f\"{email}\",",
+    "                                f\"subject: Happy Birthday!\\n\\n{letter}\")",
+  }
+
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, original)
+  state.source_bufnr = bufnr
+  state.source_winnr = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(state.source_winnr, bufnr)
+  vim.api.nvim_win_set_cursor(state.source_winnr, { 14, 0 })
+  state.pending_blocks = {
+    {
+      content = table.concat(proposed, "\n"),
+      lang = "python",
+      target_bufnr = bufnr,
+      stageable = true,
+    },
+  }
+
+  truthy(actions.start_stream_preview(1, state.pending_blocks[1]), "stream preview should start")
+  actions.append_stream_preview(table.concat(proposed, "\n") .. "\n")
+  local change = actions.finish_stream_preview()
+
+  equal(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), proposed)
+  equal(change.start_idx, 0)
+  equal(change.end_idx, -1)
+  equal(change.original_lines, original)
+
+  actions.reject_all()
+  equal(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), original)
+end)
+
 test("proposed highlights do not add AI virtual text", function()
   local state = reset_state()
   local actions = require("chatforge.core.actions")

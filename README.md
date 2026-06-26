@@ -429,7 +429,7 @@ Set `debug = true`, reproduce the problem, and inspect `:messages`.
 - Reset ignores an active request's eventual result but does not stop its underlying `curl` job.
 - One staged edit must be accepted or rejected before another message is sent.
 - Edit streaming uses the first fenced code block as proposed code.
-- Inferred edit requests insert proposed code at the cursor. Use a visual selection for precise replacement of existing lines.
+- Inferred edit requests insert small proposed blocks at the cursor. Whole-file model responses that match the open buffer replace the buffer and highlight only changed lines. Use a visual selection for precise replacement of a known range.
 - Multi-file patches are not parsed or applied as one transaction.
 - `delete file` does not delete files.
 - Staging changes the live buffer. Autosave or manual `:write` can put an unaccepted proposal on disk.
