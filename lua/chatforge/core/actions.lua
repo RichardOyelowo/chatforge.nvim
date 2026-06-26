@@ -3,6 +3,7 @@ local state = require("chatforge.core.state")
 local log   = require("chatforge.utils.logger")
 local render = require("chatforge.ui.render")
 local config = require("chatforge.config")
+local patch = require("chatforge.core.patch")
 local NS = vim.api.nvim_create_namespace("chatforge_proposed_change")
 
 vim.api.nvim_set_hl(0, "ChatforgeProposedChange", { underline = true, sp = "#7aa2f7", default = true })
@@ -397,6 +398,48 @@ local function write_lines_live(bufnr, lines, target, opts, on_done)
   step()
 end
 
+local function stage_patch_live(bufnr, content, block, opts, on_done)
+  opts = opts or {}
+  focus_source_window(bufnr)
+
+  local original_line_count = vim.api.nvim_buf_line_count(bufnr)
+  local full_original = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  local changes, err = patch.build_changes(full_original, content)
+  if err then
+    vim.notify("[chatforge] " .. err, vim.log.levels.WARN)
+    render.append_status(err, "error")
+    return
+  end
+
+  local start_idx, end_idx, original, proposed = patch.range_for_changes(full_original, changes)
+  local original_changedtick = vim.api.nvim_buf_get_changedtick(bufnr)
+  local was_modifiable = vim.bo[bufnr].modifiable
+  vim.bo[bufnr].modifiable = true
+
+  state.applying = true
+  render.start_forging_status()
+
+  for idx = #changes, 1, -1 do
+    local change = changes[idx]
+    vim.api.nvim_buf_set_lines(bufnr, change.start_idx, change.end_idx, false, change.new_lines)
+  end
+
+  if opts.highlight then
+    add_proposed_highlight(bufnr, start_idx, #proposed, changed_line_marks(original, proposed))
+  end
+  if end_idx == original_line_count then
+    remove_eof_blank_after_replace(bufnr, start_idx, #proposed, -1, original_line_count)
+  end
+
+  vim.bo[bufnr].modifiable = was_modifiable
+  state.applying = false
+  render.stop_forging_status()
+
+  if on_done then
+    on_done(staged_metadata(block, bufnr, start_idx, end_idx, original, proposed, original_changedtick))
+  end
+end
+
 local function insert_stream_line(stream, line)
   vim.bo[stream.bufnr].modifiable = true
   vim.api.nvim_buf_set_lines(stream.bufnr, stream.insert_at, stream.insert_at, false, { line })
@@ -615,6 +658,15 @@ function M.stage_preview(idx)
   end
 
   local target = block_target(idx, bufnr)
+  if patch.is_search_replace(block.content) then
+    stage_patch_live(bufnr, block.content, block, { highlight = true }, function(change)
+      state.staged_changes[idx] = change
+      render.append_status("Implementation #" .. idx .. " staged. Use :ChatAccept, :ChatReject, or :ChatDiff.")
+      log.log("stage_preview_patch: block=%d bufnr=%d", idx, bufnr)
+    end)
+    return
+  end
+
   write_lines_live(bufnr, lines, target, { highlight = true, block_index = idx }, function(change)
     state.staged_changes[idx] = change
     render.append_status("Implementation #" .. idx .. " staged. Use :ChatAccept, :ChatReject, or :ChatDiff.")

@@ -178,7 +178,7 @@ test("edit intent stages by default and review intent stays chat", function()
   local edit = dispatcher.dispatch("please update this to return two", bufnr)
   equal(edit.action, "edit_file")
   truthy(edit.stage, "edit intent should be stageable")
-  truthy(edit.prompt:find("code to stage", 1, true), "edit prompt should ask for stageable code")
+  truthy(edit.prompt:find("SEARCH/REPLACE", 1, true), "edit prompt should ask for exact patches")
   truthy(edit.prompt:find("local value = 1", 1, true), "edit prompt should include the live buffer")
 
   local review = dispatcher.dispatch("how is my code @file ?", bufnr)
@@ -200,7 +200,7 @@ test("forced staging turns a normal prompt into an edit request", function()
   local forced = dispatcher.dispatch("make this cleaner", bufnr, { force_stage = true })
   equal(forced.action, "edit_file")
   truthy(forced.stage, "forced prompt should be stageable")
-  truthy(forced.prompt:find("code to stage", 1, true), "forced prompt should use edit instructions")
+  truthy(forced.prompt:find("SEARCH/REPLACE", 1, true), "forced prompt should use edit instructions")
 end)
 
 test("dialog wrapper falls back to native vim.ui", function()
@@ -366,6 +366,137 @@ test("inferred streamed staging inserts without clearing the file", function()
     "local before = true",
     "local anchor = true",
     "local after = true",
+  })
+end)
+
+test("search replace patch stages only matching source range", function()
+  local state = reset_state()
+  local actions = require("chatforge.core.actions")
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+    "import datetime as dt",
+    "import smtplib",
+    "from random import randint",
+    "import pandas",
+    "",
+    "#................................. converting csv to dictionary ............................................",
+    "data = pandas.read_csv(\"birthdays.csv\")",
+    "pandas.DataFrame(data)",
+    "data_dict = data.to_dict(\"records\")",
+    "",
+    "#.................................. working with birthday_date .............................................",
+    "now = dt.datetime.now()",
+  })
+  state.source_bufnr = bufnr
+  state.pending_blocks = {
+    {
+      content = table.concat({
+        "------- SEARCH",
+        "#................................. converting csv to dictionary ............................................",
+        "data = pandas.read_csv(\"birthdays.csv\")",
+        "pandas.DataFrame(data)",
+        "data_dict = data.to_dict(\"records\")",
+        "=======",
+        "# Convert CSV data to list of dictionaries",
+        "data = pandas.read_csv(\"birthdays.csv\")",
+        "data_dict = data.to_dict(\"records\")",
+        "+++++++ REPLACE",
+      }, "\n"),
+      lang = "diff",
+      target_bufnr = bufnr,
+      stageable = true,
+    },
+  }
+
+  actions.stage_preview(1)
+
+  equal(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), {
+    "import datetime as dt",
+    "import smtplib",
+    "from random import randint",
+    "import pandas",
+    "",
+    "# Convert CSV data to list of dictionaries",
+    "data = pandas.read_csv(\"birthdays.csv\")",
+    "data_dict = data.to_dict(\"records\")",
+    "",
+    "#.................................. working with birthday_date .............................................",
+    "now = dt.datetime.now()",
+  })
+  truthy(state.staged_changes[1], "patch should stage a pending change")
+  equal(state.staged_changes[1].start_line, 6)
+  equal(state.staged_changes[1].original_lines, {
+    "#................................. converting csv to dictionary ............................................",
+    "data = pandas.read_csv(\"birthdays.csv\")",
+    "pandas.DataFrame(data)",
+    "data_dict = data.to_dict(\"records\")",
+  })
+
+  actions.reject_all()
+  equal(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), {
+    "import datetime as dt",
+    "import smtplib",
+    "from random import randint",
+    "import pandas",
+    "",
+    "#................................. converting csv to dictionary ............................................",
+    "data = pandas.read_csv(\"birthdays.csv\")",
+    "pandas.DataFrame(data)",
+    "data_dict = data.to_dict(\"records\")",
+    "",
+    "#.................................. working with birthday_date .............................................",
+    "now = dt.datetime.now()",
+  })
+end)
+
+test("search replace patch supports multiple sections", function()
+  local state = reset_state()
+  local actions = require("chatforge.core.actions")
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+    "local one = 1",
+    "local keep = true",
+    "local two = 2",
+  })
+  state.source_bufnr = bufnr
+  state.pending_blocks = {
+    {
+      content = table.concat({
+        "------- SEARCH",
+        "local one = 1",
+        "=======",
+        "local one = 10",
+        "+++++++ REPLACE",
+        "------- SEARCH",
+        "local two = 2",
+        "=======",
+        "local two = 20",
+        "+++++++ REPLACE",
+      }, "\n"),
+      lang = "diff",
+      target_bufnr = bufnr,
+      stageable = true,
+    },
+  }
+
+  actions.stage_preview(1)
+
+  equal(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), {
+    "local one = 10",
+    "local keep = true",
+    "local two = 20",
+  })
+  equal(state.staged_changes[1].original_lines, {
+    "local one = 1",
+    "local keep = true",
+    "local two = 2",
+  })
+
+  actions.reject_all()
+  equal(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), {
+    "local one = 1",
+    "local keep = true",
+    "local two = 2",
   })
 end)
 

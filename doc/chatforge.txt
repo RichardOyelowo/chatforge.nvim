@@ -26,7 +26,7 @@ ChatForge keeps an Ollama conversation for each source buffer. Edit requests
 stream into the live Neovim buffer as marked proposals. Accept writes a fresh
 proposal to disk. Reject restores its saved original lines in memory.
 
-Version 0.2.1 supports one Ollama backend. It handles one active request and
+Version 0.2.3 supports one Ollama backend. It handles one active request and
 one staged edit workflow at a time. Chat and model state last only for the
 current Neovim process.
 
@@ -48,7 +48,7 @@ lazy.nvim example: >lua
 
   {
     "RichardOyelowo/chatforge.nvim",
-    version = "v0.2.1",
+    version = "v0.2.3",
     cmd = {
       "Chat", "ChatSend", "ChatEdit", "ChatModel", "ChatReset",
       "ChatApply", "ChatAccept", "ChatDiff", "ChatReviewDiff",
@@ -95,8 +95,8 @@ Force a live staged edit regardless of wording: >vim
 
   :ChatEdit add input validation to this file
 <
-The first fenced code block starts staging highlighted code in the source
-buffer while Ollama responds. Review the marked lines: >vim
+Edit requests prefer exact SEARCH/REPLACE patch blocks. Matching ranges are
+staged in the source buffer and highlighted. Review the marked lines: >vim
 
   :ChatDiff
   :ChatAccept
@@ -191,7 +191,7 @@ Use braces for a named directory: >vim
 <
 Named directory paths stay under |:pwd|. A leading slash is stripped, so
 `@{dir /lua}` means `<cwd>/lua`. Absolute directory paths, `~`, and environment
-variable expansion are not supported in version 0.2.1.
+variable expansion are not supported in version 0.2.3.
 
 Directory listings are not recursive. One read returns at most 64 entries.
 
@@ -248,15 +248,17 @@ STAGED EDITS                                       *chatforge-staged-edits*
 
 Staging changes a Neovim buffer in memory. It does not write to disk.
 
-Edit-shaped prompts, |:ChatEdit|, `create file`, and visual-selection requests
-use streamed Ollama responses. When the first fenced block begins, ChatForge
-stages highlighted code in the target buffer. It does not add text markers into
-the source buffer.
+Edit-shaped prompts and |:ChatEdit| prefer exact SEARCH/REPLACE patch blocks.
+ChatForge matches the SEARCH text against the current buffer, replaces only that
+range, and highlights the proposed lines. `create file` and raw-code fallbacks
+still use fenced code blocks. ChatForge does not add text markers into the
+source buffer.
 
 Targets:
 
-- Edit-shaped prompts without a selected range insert the proposal at the
-  source cursor. They do not clear the file.
+- Edit-shaped prompts without a selected range use SEARCH/REPLACE patches when
+  available. Small raw-code fallbacks insert at the source cursor. Whole-file
+  fallbacks replace the buffer only when they match the open file shape.
 - A visual selection replaces only its original line range.
 - `create file <path>` opens or creates that path in the source window, then
   stages the generated block there.
@@ -287,7 +289,7 @@ buffer state. Staged metadata remains available. |:ChatDiff| compares the saved
 original snapshot with the proposal. It does not include the newer user-edited
 buffer.
 
-Version 0.2.1 has no force-accept or force-reject command.
+Version 0.2.3 has no force-accept or force-reject command.
 
 =============================================================================
 REVIEW COMMANDS                                         *chatforge-review*
@@ -367,7 +369,7 @@ Commands for review are documented at |chatforge-review|.
 :ChatBackend status  Show tracked Ollama server and model-pull job states.
 :ChatBackend start   Show `ollama serve`. It does not start a server.
 :ChatBackend stop    Stop a plugin-managed model pull or server job. Version
-                     0.2.1 does not create a server job itself.
+                     0.2.3 does not create a server job itself.
 
 When Ollama is unreachable, ChatForge can show `ollama serve` or ignore the
 error. When a model is missing, it can run `ollama pull <model>` as a Neovim
@@ -377,7 +379,7 @@ plugin-managed pull. It cannot stop a server started in another terminal.
 =============================================================================
 CONFIGURATION                                           *chatforge-config*
 
-All fields are optional. Version 0.2.1 defaults: >lua
+All fields are optional. Version 0.2.3 defaults: >lua
 
   require("chatforge").setup({
     default_model = "llama3",
@@ -426,7 +428,7 @@ Show `[chatforge]` dispatch, request, parser, and backend notifications.
 `system_prompt` ~
 System message prepended to every request. Use an empty string to omit it.
 
-Unknown fields remain in the merged configuration but version 0.2.1 does not
+Unknown fields remain in the merged configuration but version 0.2.3 does not
 use them.
 
 =============================================================================
@@ -463,7 +465,7 @@ The check reports:
 - default model presence in the returned model list
 - render-markdown.nvim and dressing.nvim detection
 
-The state-directory check is diagnostic. Version 0.2.1 keeps conversations in
+The state-directory check is diagnostic. Version 0.2.3 keeps conversations in
 memory and does not persist them in that directory.
 
 =============================================================================
@@ -521,11 +523,12 @@ KNOWN LIMITATIONS                                    *chatforge-limitations*
 - One request can be active at a time across the plugin.
 - Reset ignores an active result but does not stop its underlying curl job.
 - Existing staged work blocks the next message.
-- The first fenced block in an edit response becomes proposed code.
-- Inferred edit requests insert small proposed blocks at the cursor.
+- Edit requests prefer exact SEARCH/REPLACE patch blocks. Raw code blocks remain
+  a fallback.
+- Inferred raw-code edit fallbacks insert small proposed blocks at the cursor.
   Whole-file model responses that match the open buffer replace the buffer and
-  highlight only changed lines. Use a visual selection for precise replacement
-  of a known range.
+  highlight only changed lines. Use SEARCH/REPLACE or a visual selection for
+  precise replacement of a known range.
 - Multi-file patches are not applied as one transaction.
 - `delete file` does not delete files.
 - Staging changes the live buffer. External writes can save a proposal early.

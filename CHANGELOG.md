@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-06-26
+
+### Added
+
+- Avante-inspired SEARCH/REPLACE patch staging for edit requests.
+- Dedicated patch parser for exact old-text matching and targeted source-buffer replacement.
+
+### Fixed
+
+- Edit responses that contain patch text no longer write that patch text into the source buffer.
+- Inferred edits can now replace only the matched changed section instead of appending a whole-file response below the cursor.
+
 ## [0.2.2] - 2026-06-26
 
 ### Fixed
@@ -83,7 +95,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Normal prose after bare `@file` is never interpreted as a path.
 - Stale Accept and Reject operations stop before overwriting newer buffer edits.
 
-[Unreleased]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.1.0...v0.2.0

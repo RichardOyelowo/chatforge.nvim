@@ -5,6 +5,7 @@ local client     = require("chatforge.api.client")
 local dispatcher = require("chatforge.core.dispatcher")
 local parser     = require("chatforge.core.parser")
 local actions    = require("chatforge.core.actions")
+local patch      = require("chatforge.core.patch")
 local log        = require("chatforge.utils.logger")
 
 local INPUT_HEIGHT = 8
@@ -357,6 +358,7 @@ local function do_send(src_bufnr, input, opts)
         model = model,
         prompt_summary = input,
       },
+      defer_source = dispatched.action == "edit_file",
     }
   end
 
@@ -378,12 +380,19 @@ local function do_send(src_bufnr, input, opts)
         local lang = line:match("^```%s*(%S*)")
         if lang then
           stream.in_code = true
-          stream.started = actions.start_stream_preview(1, stream.block)
+          stream.block.lang = lang
+          if not stream.defer_source then
+            stream.started = actions.start_stream_preview(1, stream.block)
+          end
         end
       elseif line:match("^```") then
         stream.in_code = false
         stream.finished = true
-        actions.finish_stream_preview()
+        if stream.started then
+          actions.finish_stream_preview()
+        end
+      elseif stream.defer_source then
+        stream.block.content = stream.block.content .. line .. "\n"
       elseif stream.started then
         stream.block.content = stream.block.content .. line .. "\n"
         actions.append_stream_preview(line .. "\n")
@@ -414,6 +423,11 @@ local function do_send(src_bufnr, input, opts)
       end
       actions.finish_stream_preview()
       stream.finished = true
+    elseif stream and stream.in_code and stream.defer_source and not stream.finished then
+      if stream.buffer ~= "" and not stream.buffer:match("^```") then
+        stream.block.content = stream.block.content .. stream.buffer
+      end
+      stream.finished = true
     end
     local segments = parser.parse(text)
     if not stream or not stream.finished then
@@ -432,7 +446,7 @@ local function do_send(src_bufnr, input, opts)
         local parsed_action = actions_by_block[seg.index] or {}
         local stageable = should_stage
         if should_stage and not edit_target and not explicit_target_file then
-          stageable = looks_like_full_file(seg.content, src_bufnr)
+          stageable = patch.is_search_replace(seg.content) or looks_like_full_file(seg.content, src_bufnr)
         end
         if not stream or not stream.finished then
           table.insert(state.pending_blocks, {

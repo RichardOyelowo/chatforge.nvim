@@ -400,9 +400,19 @@ local function build_prompt(input, action, src_bufnr)
   local edit_instruction = ""
   if action == "edit_file" then
     edit_instruction = "\n\n[ChatForge edit request]\n"
-      .. "Return the code to stage in the first fenced code block. "
-      .. "For focused changes, return only the changed block or addition. "
-      .. "For a full-file rewrite, return the complete file. "
+      .. "Return one fenced diff block using exact SEARCH/REPLACE sections. "
+      .. "The SEARCH text must match the current buffer exactly, including indentation. "
+      .. "Include only the smallest old text needed to identify the change and the replacement text. "
+      .. "Use multiple SEARCH/REPLACE sections for separate changes. "
+      .. "Do not return the whole file unless every line truly changes. "
+      .. "Format the first fenced block exactly like this:\n"
+      .. "```diff\n"
+      .. "------- SEARCH\n"
+      .. "old text from the current buffer\n"
+      .. "=======\n"
+      .. "new text to stage\n"
+      .. "+++++++ REPLACE\n"
+      .. "```\n"
       .. "Text outside that first fenced block is allowed, but the first fenced block is what ChatForge stages live in Neovim."
   end
 
