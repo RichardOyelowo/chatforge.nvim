@@ -44,6 +44,9 @@ local function reset_state()
   state.source_winnr = nil
   state.chat_source_bufnr = nil
   state.chat_entries = {}
+  state.forging_status_active = false
+  state.forging_status_entry = nil
+  state.forging_status_frame = 1
   state.pending_blocks = {}
   state.staged_changes = {}
   state.recent_contexts = {}
@@ -175,7 +178,7 @@ test("edit intent stages by default and review intent stays chat", function()
   local edit = dispatcher.dispatch("please update this to return two", bufnr)
   equal(edit.action, "edit_file")
   truthy(edit.stage, "edit intent should be stageable")
-  truthy(edit.prompt:find("complete replacement", 1, true), "edit prompt should ask for a full replacement")
+  truthy(edit.prompt:find("code to stage", 1, true), "edit prompt should ask for stageable code")
   truthy(edit.prompt:find("local value = 1", 1, true), "edit prompt should include the live buffer")
 
   local review = dispatcher.dispatch("how is my code @file ?", bufnr)
@@ -197,7 +200,7 @@ test("forced staging turns a normal prompt into an edit request", function()
   local forced = dispatcher.dispatch("make this cleaner", bufnr, { force_stage = true })
   equal(forced.action, "edit_file")
   truthy(forced.stage, "forced prompt should be stageable")
-  truthy(forced.prompt:find("complete replacement", 1, true), "forced prompt should use edit instructions")
+  truthy(forced.prompt:find("code to stage", 1, true), "forced prompt should use edit instructions")
 end)
 
 test("dialog wrapper falls back to native vim.ui", function()
@@ -294,6 +297,12 @@ test("streamed staging changes the live buffer and reject restores it", function
     {
       content = "local value = 2",
       lang = "lua",
+      target = {
+        bufnr = bufnr,
+        line1 = 1,
+        line2 = 1,
+        kind = "selection",
+      },
       target_bufnr = bufnr,
       stageable = true,
     },
@@ -317,6 +326,81 @@ test("streamed staging changes the live buffer and reject restores it", function
   equal(state.staged_changes, {})
 end)
 
+test("inferred streamed staging inserts without clearing the file", function()
+  local state = reset_state()
+  local actions = require("chatforge.core.actions")
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+    "local before = true",
+    "local anchor = true",
+    "local after = true",
+  })
+  state.source_bufnr = bufnr
+  state.source_winnr = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(state.source_winnr, bufnr)
+  vim.api.nvim_win_set_cursor(state.source_winnr, { 2, 0 })
+  state.pending_blocks = {
+    {
+      content = "local inserted = true",
+      lang = "lua",
+      target_bufnr = bufnr,
+      stageable = true,
+    },
+  }
+
+  truthy(actions.start_stream_preview(1, state.pending_blocks[1]), "stream preview should start")
+  actions.append_stream_preview("local inserted = true\n")
+  local change = actions.finish_stream_preview()
+
+  equal(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), {
+    "local before = true",
+    "local inserted = true",
+    "local anchor = true",
+    "local after = true",
+  })
+  equal(change.original_lines, {})
+  equal(change.start_line, 2)
+
+  actions.reject_all()
+  equal(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), {
+    "local before = true",
+    "local anchor = true",
+    "local after = true",
+  })
+end)
+
+test("proposed highlights do not add AI virtual text", function()
+  local state = reset_state()
+  local actions = require("chatforge.core.actions")
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "return true" })
+  state.source_bufnr = bufnr
+  state.pending_blocks = {
+    {
+      content = "return false",
+      lang = "lua",
+      target = {
+        bufnr = bufnr,
+        line1 = 1,
+        line2 = 1,
+        kind = "selection",
+      },
+      target_bufnr = bufnr,
+      stageable = true,
+    },
+  }
+
+  truthy(actions.start_stream_preview(1, state.pending_blocks[1]))
+  actions.append_stream_preview("return false\n")
+  actions.finish_stream_preview()
+
+  local extmarks = vim.api.nvim_buf_get_extmarks(bufnr, -1, 0, -1, { details = true })
+  for _, mark in ipairs(extmarks) do
+    local details = mark[4] or {}
+    truthy(details.virt_text == nil, "staged highlights should not add AI virtual text")
+  end
+end)
+
 test("reject refuses to overwrite edits made after staging", function()
   local state = reset_state()
   local actions = require("chatforge.core.actions")
@@ -327,6 +411,12 @@ test("reject refuses to overwrite edits made after staging", function()
     {
       content = "local value = 2",
       lang = "lua",
+      target = {
+        bufnr = bufnr,
+        line1 = 1,
+        line2 = 1,
+        kind = "selection",
+      },
       target_bufnr = bufnr,
       stageable = true,
       model = "test-model",

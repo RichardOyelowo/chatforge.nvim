@@ -15,6 +15,9 @@ M.chat_lines = {}
 M.chat_spans = {}
 M.chat_entries = {}
 M.last_status_entry = nil
+M.forging_status_active = false
+M.forging_status_entry = nil
+M.forging_status_frame = 1
 M.render_ns = vim.api.nvim_create_namespace("chatforge_chat_render")
 M.loading       = false
 M.request_id    = 0
@@ -77,6 +80,9 @@ function M.clear(bufnr)
   M.recent_contexts = {}
   M.edit_target = nil
   M.last_status_entry = nil
+  M.forging_status_active = false
+  M.forging_status_entry = nil
+  M.forging_status_frame = 1
 end
 
 function M.chat_is_open()

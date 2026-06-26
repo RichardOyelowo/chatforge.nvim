@@ -3,6 +3,7 @@ local state = require("chatforge.core.state")
 local NL    = "\n"
 
 local CHAT_WIDTH = 58
+local FORGING_FRAMES = { "|", "/", "-", "\\" }
 local message_lines
 
 vim.api.nvim_set_hl(0, "ChatforgeUserBubble", { fg = "#d7f7ff", bg = "#17343a", default = true })
@@ -317,6 +318,44 @@ function M.append_status(msg, kind)
     content = msg,
   })
   state.last_status_entry = #(state.chat_entries or {})
+end
+
+function M.start_forging_status()
+  if state.forging_status_active then
+    return
+  end
+
+  state.forging_status_active = true
+  state.forging_status_frame = 1
+  M.append_status("Chat's forging " .. FORGING_FRAMES[state.forging_status_frame])
+  state.forging_status_entry = state.last_status_entry
+
+  local function tick()
+    if not state.forging_status_active then
+      return
+    end
+    if not state.chat_entries or not state.forging_status_entry or not state.chat_entries[state.forging_status_entry] then
+      state.forging_status_active = false
+      return
+    end
+
+    state.forging_status_frame = (state.forging_status_frame % #FORGING_FRAMES) + 1
+    state.chat_entries[state.forging_status_entry].content = "Chat's forging " .. FORGING_FRAMES[state.forging_status_frame]
+    redraw()
+    vim.defer_fn(tick, 120)
+  end
+
+  vim.defer_fn(tick, 120)
+end
+
+function M.stop_forging_status()
+  if not state.forging_status_active then
+    return
+  end
+  state.forging_status_active = false
+  state.last_status_entry = state.forging_status_entry
+  state.forging_status_entry = nil
+  M.remove_last_status()
 end
 
 function M.remove_last_status()

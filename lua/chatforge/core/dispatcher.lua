@@ -400,8 +400,9 @@ local function build_prompt(input, action, src_bufnr)
   local edit_instruction = ""
   if action == "edit_file" then
     edit_instruction = "\n\n[ChatForge edit request]\n"
-      .. "Return the complete replacement for the target buffer in the first fenced code block. "
-      .. "Do not return a partial snippet unless the user selected a range. "
+      .. "Return the code to stage in the first fenced code block. "
+      .. "For focused changes, return only the changed block or addition. "
+      .. "For a full-file rewrite, return the complete file. "
       .. "Text outside that first fenced block is allowed, but the first fenced block is what ChatForge stages live in Neovim."
   end
 

@@ -158,11 +158,6 @@ local function add_proposed_highlight(bufnr, start_idx, line_count, marks)
   for offset = 0, line_count - 1 do
     if not marks or marks[offset + 1] then
       vim.api.nvim_buf_add_highlight(bufnr, NS, proposed_hl(), start_idx + offset, 0, -1)
-      vim.api.nvim_buf_set_extmark(bufnr, NS, start_idx + offset, 0, {
-        virt_text = { { " AI", "DiagnosticHint" } },
-        virt_text_pos = "eol",
-        hl_mode = "combine",
-      })
     end
   end
 end
@@ -238,14 +233,49 @@ local function jump_staged(direction)
   vim.api.nvim_win_set_cursor(state.source_winnr, { math.max(line, 1), 0 })
 end
 
+local function cursor_insert_idx(bufnr)
+  local win = find_window_for_buf(bufnr)
+  if win and vim.api.nvim_win_is_valid(win) then
+    return math.max(vim.api.nvim_win_get_cursor(win)[1] - 1, 0)
+  end
+  return vim.api.nvim_buf_line_count(bufnr)
+end
+
+local function stage_range(bufnr, target, block)
+  if target and target.line1 then
+    return target.line1 - 1, target.line2, "replace"
+  end
+  if block and block.action == "create_file" then
+    return 0, -1, "replace"
+  end
+  local insert_at = cursor_insert_idx(bufnr)
+  return insert_at, insert_at, "insert"
+end
+
+local function remove_eof_blank_after_replace(bufnr, start_idx, inserted_count, end_idx, original_line_count)
+  if end_idx ~= -1 and end_idx < original_line_count then
+    return
+  end
+  local blank_idx = start_idx + inserted_count
+  local line_count = vim.api.nvim_buf_line_count(bufnr)
+  if blank_idx >= line_count then
+    return
+  end
+  local line = vim.api.nvim_buf_get_lines(bufnr, blank_idx, blank_idx + 1, false)[1]
+  if line == "" then
+    vim.api.nvim_buf_set_lines(bufnr, blank_idx, blank_idx + 1, false, {})
+  end
+end
+
 local function write_lines_live(bufnr, lines, target, opts, on_done)
   opts = opts or {}
   focus_source_window(bufnr)
 
   local was_modifiable = vim.bo[bufnr].modifiable
   vim.bo[bufnr].modifiable = true
-  local start_idx = target and target.line1 and (target.line1 - 1) or 0
-  local end_idx = target and target.line2 or -1
+  local block = state.pending_blocks[opts.block_index or 1]
+  local original_line_count = vim.api.nvim_buf_line_count(bufnr)
+  local start_idx, end_idx, mode = stage_range(bufnr, target, block)
   local original_changedtick = vim.api.nvim_buf_get_changedtick(bufnr)
   local original = vim.api.nvim_buf_get_lines(bufnr, start_idx, end_idx, false)
   vim.api.nvim_buf_set_lines(bufnr, start_idx, end_idx, false, {})
@@ -254,12 +284,12 @@ local function write_lines_live(bufnr, lines, target, opts, on_done)
   local chunk_size = 2
   local insert_at = start_idx
   state.applying = true
-  render.append_status("Implementing in source buffer...")
+  render.start_forging_status()
 
   local function step()
     if not vim.api.nvim_buf_is_valid(bufnr) then
       state.applying = false
-      render.remove_last_status()
+      render.stop_forging_status()
       return
     end
 
@@ -285,20 +315,16 @@ local function write_lines_live(bufnr, lines, target, opts, on_done)
     if i <= #lines then
       vim.defer_fn(step, 18)
     else
-      if not target then
-        local current = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-        if #current > #lines and current[#current] == "" then
-          vim.api.nvim_buf_set_lines(bufnr, #current - 1, #current, false, {})
-        end
-      end
       if opts.highlight then
         add_proposed_highlight(bufnr, start_idx, #lines, changed_line_marks(original, lines))
       end
+      if mode == "replace" then
+        remove_eof_blank_after_replace(bufnr, start_idx, #lines, end_idx, original_line_count)
+      end
       vim.bo[bufnr].modifiable = was_modifiable
       state.applying = false
-      render.remove_last_status()
+      render.stop_forging_status()
       if on_done then
-        local block = state.pending_blocks[opts.block_index or 1]
         on_done(staged_metadata(block, bufnr, start_idx, end_idx, original, lines, original_changedtick))
       end
     end
@@ -342,8 +368,8 @@ function M.start_stream_preview(idx, block)
   vim.bo[bufnr].modifiable = true
   focus_source_window(bufnr)
 
-  local start_idx = target and target.line1 and (target.line1 - 1) or 0
-  local end_idx = target and target.line2 or -1
+  local original_line_count = vim.api.nvim_buf_line_count(bufnr)
+  local start_idx, end_idx, mode = stage_range(bufnr, target, block)
   local original_changedtick = vim.api.nvim_buf_get_changedtick(bufnr)
   local original = vim.api.nvim_buf_get_lines(bufnr, start_idx, end_idx, false)
   vim.api.nvim_buf_set_lines(bufnr, start_idx, end_idx, false, {})
@@ -356,13 +382,16 @@ function M.start_stream_preview(idx, block)
     end_idx = end_idx,
     insert_at = start_idx,
     original = original,
+    original_line_count = original_line_count,
     original_changedtick = original_changedtick,
+    mode = mode,
     target = target,
     was_modifiable = was_modifiable,
     pending = "",
     lines = {},
   }
   state.applying = true
+  render.start_forging_status()
   return true
 end
 
@@ -394,11 +423,8 @@ function M.finish_stream_preview()
     insert_stream_line(stream, stream.pending)
   end
 
-  if not stream.target then
-    local current = vim.api.nvim_buf_get_lines(stream.bufnr, 0, -1, false)
-    if #current > #stream.lines and current[#current] == "" then
-      vim.api.nvim_buf_set_lines(stream.bufnr, #current - 1, #current, false, {})
-    end
+  if stream.mode == "replace" then
+    remove_eof_blank_after_replace(stream.bufnr, stream.start_idx, #stream.lines, stream.end_idx, stream.original_line_count)
   end
 
   vim.bo[stream.bufnr].modifiable = stream.was_modifiable
@@ -415,6 +441,7 @@ function M.finish_stream_preview()
   state.staged_changes[stream.idx] = change
   state.streaming_change = nil
   state.applying = false
+  render.stop_forging_status()
   return change
 end
 

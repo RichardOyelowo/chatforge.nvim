@@ -10,7 +10,7 @@ ChatForge keeps the coding assistant inside the editor flow:
 4. Review the diff.
 5. Accept to write it, or reject to restore the original text.
 
-Version `0.2.0` is focused on making that loop reliable. It uses Ollama, keeps context explicit, avoids global keymaps, and treats AI edits as reversible proposals before they reach disk.
+Version `0.2.1` is focused on making that loop reliable. It uses Ollama, keeps context explicit, avoids global keymaps, and treats AI edits as reversible proposals before they reach disk.
 
 ## Why ChatForge
 
@@ -47,7 +47,7 @@ Both optional plugins are detected by `:checkhealth chatforge`.
 ```lua
 {
   "RichardOyelowo/chatforge.nvim",
-  version = "v0.2.0",
+  version = "v0.2.1",
   cmd = {
     "Chat",
     "ChatSend",
@@ -170,13 +170,13 @@ ChatForge stages code when a prompt asks to:
 
 Plain review and explanation prompts stay in chat. Fenced code in those answers is shown as example code and is not staged unless you use `:ChatEdit`.
 
-For a stageable request, the first fenced code block is treated as replacement text. ChatForge removes the target text and inserts complete generated lines into the source buffer as they arrive. Proposed lines use `ChatforgeProposedChange` and an `AI` end-of-line marker.
+For a stageable request, the first fenced code block is treated as proposed code. ChatForge highlights proposed lines with `ChatforgeProposedChange` and does not add text markers into the source buffer.
 
 Targets:
 
-- Edit-shaped prompts replace the full current buffer.
+- Edit-shaped prompts without a selected range insert the proposal at the source cursor. They do not clear the file.
 - Visual selections replace only the selected line range.
-- `edit file <path>` and `create file <path>` open or create that path in the source window, then replace the full buffer.
+- `create file <path>` opens or creates that path in the source window, then stages the generated block there.
 
 Before another message can be sent, accept or reject any existing staged edit.
 
@@ -248,7 +248,7 @@ Unreadable files become inline HTML context errors in the model prompt. The requ
 
 `@dir` injects a sorted, one-level listing of the current working directory. `@{dir path}` injects a sorted, one-level listing under the current working directory.
 
-Named directory paths stay under `:pwd`. A leading slash is stripped, so `@{dir /lua}` means `<cwd>/lua`. Absolute directory paths, `~`, and environment variable expansion are not supported in v0.2.0.
+Named directory paths stay under `:pwd`. A leading slash is stripped, so `@{dir /lua}` means `<cwd>/lua`. Absolute directory paths, `~`, and environment variable expansion are not supported in v0.2.1.
 
 One directory read returns at most 64 entries.
 
@@ -300,21 +300,21 @@ Staging is an in-memory buffer edit. It is not a disk write.
 
 The source buffer becomes modified during staging. Autosave plugins, manual `:write`, or other editor commands can still write the proposal before acceptance. ChatForge does not block external writes.
 
-There is no force-accept or force-reject command in v0.2.0. Review the diff and resolve stale buffers manually.
+There is no force-accept or force-reject command in v0.2.1. Review the diff and resolve stale buffers manually.
 
 ## Backend And Model Recovery
 
-Ollama is the only backend in v0.2.0.
+Ollama is the only backend in v0.2.1.
 
 If Ollama is unreachable, ChatForge offers to show the `ollama serve` command or ignore the error. `:ChatBackend start` also shows the command. It does not start an Ollama server.
 
 If the selected model is missing, ChatForge can run `ollama pull <model>` as a Neovim job, show the command only, or ignore the error. `:ChatBackend stop` can stop a plugin-managed pull. It cannot stop an Ollama server started outside ChatForge.
 
-`:ChatBackend status` reports tracked server and model-pull state. Since v0.2.0 does not start the server itself, server status normally reads `not-managed` even when Ollama is reachable.
+`:ChatBackend status` reports tracked server and model-pull state. Since v0.2.1 does not start the server itself, server status normally reads `not-managed` even when Ollama is reachable.
 
 ## Configuration
 
-All fields are optional. These are the v0.2.0 defaults:
+All fields are optional. These are the v0.2.1 defaults:
 
 ```lua
 require("chatforge").setup({
@@ -350,7 +350,7 @@ require("chatforge").setup({
 | `debug` | Show `[chatforge]` dispatch, request, parser, and backend notifications. |
 | `system_prompt` | System message prepended to every request. Set to an empty string to omit it. |
 
-Unknown fields are retained by the config merge but are not used by v0.2.0.
+Unknown fields are retained by the config merge but are not used by v0.2.1.
 
 ## Health Check
 
@@ -369,7 +369,7 @@ The health check reports:
 - render-markdown.nvim detection
 - dressing.nvim detection
 
-The writable state directory check is diagnostic. ChatForge v0.2.0 keeps chat sessions in memory and does not persist them there.
+The writable state directory check is diagnostic. ChatForge v0.2.1 keeps chat sessions in memory and does not persist them there.
 
 ## Testing
 
@@ -428,8 +428,8 @@ Set `debug = true`, reproduce the problem, and inspect `:messages`.
 - One request can be active at a time across the plugin.
 - Reset ignores an active request's eventual result but does not stop its underlying `curl` job.
 - One staged edit must be accepted or rejected before another message is sent.
-- Edit streaming uses the first fenced code block as replacement text.
-- Whole-buffer edit requests expect a full-file response. A partial snippet can replace the whole buffer.
+- Edit streaming uses the first fenced code block as proposed code.
+- Inferred edit requests insert proposed code at the cursor. Use a visual selection for precise replacement of existing lines.
 - Multi-file patches are not parsed or applied as one transaction.
 - `delete file` does not delete files.
 - Staging changes the live buffer. Autosave or manual `:write` can put an unaccepted proposal on disk.

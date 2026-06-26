@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-06-26
+
+### Fixed
+
+- Removed literal `AI` virtual text from staged source lines.
+- Inferred live edits no longer clear the whole file before streaming.
+- Partial edit responses now insert highlighted proposed code at the source cursor.
+- Visual selections still replace only the selected line range.
+- The chat waiting status now uses `Chat's forging` with a small spinner.
+
+### Changed
+
+- Edit prompts now ask for stageable code instead of always asking for a full-file replacement.
+
 ## [0.2.0] - 2026-06-25
 
 ### Added
@@ -61,6 +75,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Normal prose after bare `@file` is never interpreted as a path.
 - Stale Accept and Reject operations stop before overwriting newer buffer edits.
 
-[Unreleased]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/RichardOyelowo/chatforge.nvim/releases/tag/v0.1.0

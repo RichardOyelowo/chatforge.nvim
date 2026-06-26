@@ -392,13 +392,13 @@ local function do_send(src_bufnr, input, opts)
   end
  
   render.append_user(input, model)
-  render.append_status("Thinking…")
+  render.start_forging_status()
  
   client.complete(src_bufnr, request_history(src_bufnr, dispatched.prompt), function(text, err)
     if request_id ~= state.request_id then
       return
     end
-    render.remove_last_status()
+    render.stop_forging_status()
     if err then
       render.append_status("Error: " .. err, "error")
       log.err(err)
