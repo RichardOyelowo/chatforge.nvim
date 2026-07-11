@@ -358,7 +358,7 @@ local function do_send(src_bufnr, input, opts)
         model = model,
         prompt_summary = input,
       },
-      defer_source = dispatched.action == "edit_file",
+      defer_source = true,
     }
   end
 
