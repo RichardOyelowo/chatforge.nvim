@@ -332,70 +332,68 @@ local function remove_eof_blank_after_replace(bufnr, start_idx, inserted_count, 
   end
 end
 
+local function apply_range_diff(bufnr, start_idx, end_idx, original, proposed, block, opts, on_done)
+  local str_a = table.concat(original, "\n")
+  local str_b = table.concat(proposed, "\n")
+  local hunks = vim.diff(str_a, str_b, { result_type = "indices" })
+
+  local original_changedtick = vim.api.nvim_buf_get_changedtick(bufnr)
+  local was_modifiable = vim.bo[bufnr].modifiable
+  vim.bo[bufnr].modifiable = true
+  state.applying = true
+  render.start_forging_status()
+
+  if #hunks > 0 then
+    for i = #hunks, 1, -1 do
+      local hunk = hunks[i]
+      local start_a, count_a, start_b, count_b = hunk[1], hunk[2], hunk[3], hunk[4]
+      local h_start, h_end
+      if count_a == 0 then
+        h_start = start_idx + start_a
+        h_end = start_idx + start_a
+      else
+        h_start = start_idx + start_a - 1
+        h_end = start_idx + start_a - 1 + count_a
+      end
+
+      local replacement = {}
+      if count_b > 0 then
+        replacement = vim.list_slice(proposed, start_b, start_b + count_b - 1)
+      end
+
+      vim.api.nvim_buf_set_lines(bufnr, h_start, h_end, false, replacement)
+    end
+  end
+
+  local total_delta = 0
+  for _, hunk in ipairs(hunks) do
+    total_delta = total_delta + hunk[4] - hunk[2]
+  end
+  local actual_end_idx = (end_idx == -1) and vim.api.nvim_buf_line_count(bufnr) or (end_idx + total_delta)
+  local proposed_slice = vim.api.nvim_buf_get_lines(bufnr, start_idx, actual_end_idx, false)
+
+  if opts.highlight then
+    add_proposed_highlight(bufnr, start_idx, #proposed_slice, changed_line_marks(original, proposed_slice))
+  end
+
+  vim.bo[bufnr].modifiable = was_modifiable
+  state.applying = false
+  render.stop_forging_status()
+
+  if on_done then
+    on_done(staged_metadata(block, bufnr, start_idx, end_idx, original, proposed_slice, original_changedtick))
+  end
+end
+
 local function write_lines_live(bufnr, lines, target, opts, on_done)
   opts = opts or {}
   focus_source_window(bufnr)
 
-  local was_modifiable = vim.bo[bufnr].modifiable
-  vim.bo[bufnr].modifiable = true
   local block = state.pending_blocks[opts.block_index or 1]
-  local original_line_count = vim.api.nvim_buf_line_count(bufnr)
   local start_idx, end_idx, mode = stage_range_for_lines(bufnr, target, block, lines)
-  local original_changedtick = vim.api.nvim_buf_get_changedtick(bufnr)
   local original = vim.api.nvim_buf_get_lines(bufnr, start_idx, end_idx, false)
-  vim.api.nvim_buf_set_lines(bufnr, start_idx, end_idx, false, {})
 
-  local i = 1
-  local chunk_size = 2
-  local insert_at = start_idx
-  state.applying = true
-  render.start_forging_status()
-
-  local function step()
-    if not vim.api.nvim_buf_is_valid(bufnr) then
-      state.applying = false
-      render.stop_forging_status()
-      return
-    end
-
-    local chunk = {}
-    for _ = 1, chunk_size do
-      if i > #lines then break end
-      table.insert(chunk, lines[i])
-      i = i + 1
-    end
-
-    if #chunk > 0 then
-      vim.bo[bufnr].modifiable = true
-      vim.api.nvim_buf_set_lines(bufnr, insert_at, insert_at, false, chunk)
-      insert_at = insert_at + #chunk
-      if opts.highlight then
-        add_proposed_highlight(bufnr, start_idx, insert_at - start_idx)
-      end
-      if state.source_winnr and vim.api.nvim_win_is_valid(state.source_winnr) then
-        vim.api.nvim_win_set_cursor(state.source_winnr, { math.max(insert_at, 1), 0 })
-      end
-    end
-
-    if i <= #lines then
-      vim.defer_fn(step, 18)
-    else
-      if opts.highlight then
-        add_proposed_highlight(bufnr, start_idx, #lines, changed_line_marks(original, lines))
-      end
-      if mode == "replace" then
-        remove_eof_blank_after_replace(bufnr, start_idx, #lines, end_idx, original_line_count)
-      end
-      vim.bo[bufnr].modifiable = was_modifiable
-      state.applying = false
-      render.stop_forging_status()
-      if on_done then
-        on_done(staged_metadata(block, bufnr, start_idx, end_idx, original, lines, original_changedtick))
-      end
-    end
-  end
-
-  step()
+  apply_range_diff(bufnr, start_idx, end_idx, original, lines, block, { highlight = opts.highlight }, on_done)
 end
 
 local function stage_patch_live(bufnr, content, block, opts, on_done)
@@ -537,12 +535,34 @@ function M.finish_stream_preview()
   elseif looks_like_whole_file(stream.full_original, stream.lines) then
     vim.bo[stream.bufnr].modifiable = true
     vim.api.nvim_buf_set_lines(stream.bufnr, stream.start_idx, stream.start_idx + #stream.lines, false, {})
-    vim.api.nvim_buf_set_lines(stream.bufnr, 0, -1, false, stream.lines)
+    local str_a = table.concat(stream.full_original, "\n")
+    local str_b = table.concat(stream.lines, "\n")
+    local hunks = vim.diff(str_a, str_b, { result_type = "indices" })
+    if #hunks > 0 then
+      for i = #hunks, 1, -1 do
+        local hunk = hunks[i]
+        local start_a, count_a, start_b, count_b = hunk[1], hunk[2], hunk[3], hunk[4]
+        local h_start, h_end
+        if count_a == 0 then
+          h_start = start_a
+          h_end = start_a
+        else
+          h_start = start_a - 1
+          h_end = start_a - 1 + count_a
+        end
+
+        local replacement = {}
+        if count_b > 0 then
+          replacement = vim.list_slice(stream.lines, start_b, start_b + count_b - 1)
+        end
+
+        vim.api.nvim_buf_set_lines(stream.bufnr, h_start, h_end, false, replacement)
+      end
+    end
     stream.start_idx = 0
     stream.end_idx = -1
     stream.original = stream.full_original
     stream.mode = "replace"
-    remove_eof_blank_after_replace(stream.bufnr, 0, #stream.lines, -1, #stream.full_original)
   end
 
   vim.bo[stream.bufnr].modifiable = stream.was_modifiable
