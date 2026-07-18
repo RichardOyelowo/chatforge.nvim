@@ -19,6 +19,16 @@ M.defaults = {
       incoming = "ChatforgeProposedChange",
     },
   },
+  default_provider = "ollama",
+  providers = {
+    ollama = {
+      url = "http://localhost:11434",
+    },
+    openai_compatible = {
+      base_url = "https://api.openai.com/v1",
+      model = "gpt-4o",
+    },
+  },
   debug         = false,
   system_prompt = "You are a helpful coding assistant embedded in Neovim. "
                .. "Be concise. Use fenced code blocks with language tags for all code. "

@@ -31,22 +31,36 @@ M.ollama_job = nil
 M.ollama_pull_job = nil
 M.ollama_job_stopping = false
 M.ollama_pull_job_stopping = false
+M.active_request_cancel = nil
 
 local config
-local function default_model()
+local function default_provider()
   config = config or require("chatforge.config")
-  return config.values.default_model
+  return config.values.default_provider or "ollama"
+end
+
+local function default_model(provider_name)
+  config = config or require("chatforge.config")
+  if provider_name == "openai_compatible" then
+    return (config.values.providers and config.values.providers.openai_compatible and config.values.providers.openai_compatible.model) or "gpt-4o"
+  end
+  return config.values.default_model or "llama3"
 end
 
 function M.get_buf(bufnr)
   if not M.buffers[bufnr] then
-    M.buffers[bufnr] = { model = default_model(), history = {} }
+    local prov = default_provider()
+    local mod = default_model(prov)
+    M.buffers[bufnr] = { model = mod, provider = prov, history = {} }
   end
   return M.buffers[bufnr]
 end
 
 function M.get_model(bufnr)   return M.get_buf(bufnr).model end
 function M.set_model(bufnr, model) M.get_buf(bufnr).model = model end
+
+function M.get_provider(bufnr) return M.get_buf(bufnr).provider end
+function M.set_provider(bufnr, provider) M.get_buf(bufnr).provider = provider end
 
 function M.append_message(bufnr, role, content, display)
   table.insert(M.get_buf(bufnr).history, { role = role, content = content, display = display })
