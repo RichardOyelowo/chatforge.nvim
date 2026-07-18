@@ -12,45 +12,32 @@ local function configured_values()
   return config.defaults, false
 end
 
-local function check_ollama(cfg)
+local function check_providers()
   if vim.fn.executable("curl") ~= 1 then
     return
   end
-
-  local result = vim.system({
-    "curl",
-    "--silent",
-    "--show-error",
-    "--max-time",
-    "2",
-    cfg.ollama_url .. "/api/tags",
-  }, { text = true }):wait()
-
-  if result.code ~= 0 then
-    vim.health.warn("Ollama is not reachable at " .. cfg.ollama_url, {
-      "Start it with: ollama serve",
-      "Check ollama_url in require('chatforge').setup().",
-    })
-    return
-  end
-
-  local ok, payload = pcall(vim.json.decode, result.stdout)
-  if not ok or type(payload) ~= "table" then
-    vim.health.error("Ollama returned an invalid response from /api/tags")
-    return
-  end
-
-  vim.health.ok("Ollama is reachable at " .. cfg.ollama_url)
-  for _, model in ipairs(payload.models or {}) do
-    local name = model.name or model.model
-    if name == cfg.default_model then
-      vim.health.ok("Default model is installed: " .. cfg.default_model)
-      return
+  local providers = require("chatforge.providers")
+  for _, name in ipairs(providers.list()) do
+    local be = providers.get(name)
+    if be and be.health then
+      local done = false
+      be.health(function(ok, msg)
+        if ok then
+          vim.health.ok(name .. ": " .. msg)
+        else
+          vim.health.warn(name .. ": " .. msg)
+        end
+        done = true
+      end)
+      local start = vim.loop.hrtime()
+      while not done and (vim.loop.hrtime() - start) < 2.5e9 do
+        vim.cmd("sleep 10m")
+      end
+      if not done then
+        vim.health.warn(name .. ": health check timed out")
+      end
     end
   end
-  vim.health.warn("Default model is not installed: " .. cfg.default_model, {
-    "Run: ollama pull " .. cfg.default_model,
-  })
 end
 
 function M.check()
@@ -82,7 +69,7 @@ function M.check()
     vim.health.error("State directory is not writable: " .. state_dir)
   end
 
-  check_ollama(cfg)
+  check_providers()
 
   if runtime_file("lua/render-markdown/init.lua") then
     vim.health.ok("Optional render-markdown.nvim detected")
