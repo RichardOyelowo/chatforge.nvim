@@ -6,7 +6,7 @@ local config = require("chatforge.config")
 local patch = require("chatforge.core.patch")
 local NS = vim.api.nvim_create_namespace("chatforge_proposed_change")
 
-vim.api.nvim_set_hl(0, "ChatforgeProposedChange", { underline = true, sp = "#7aa2f7", default = true })
+vim.api.nvim_set_hl(0, "ChatforgeProposedChange", { bg = "#2e3b52", default = true })
 
 -- ── helpers ────────────────────────────────────────────────────────────────
 
