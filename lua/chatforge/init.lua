@@ -13,7 +13,7 @@
  
 local M = {}
 
-M.version = "0.2.3"
+M.version = "0.3.0"
  
 function M.setup(opts)
   local config  = require("chatforge.config")
@@ -206,14 +206,28 @@ function M.setup(opts)
     actions.reject_all()
   end, { desc = "Reject all pending code blocks" })
 
-  -- ── :ChatBackend start|stop|status ───────────────────────────────────
+  vim.api.nvim_create_user_command("ChatStop", function()
+    if state.active_request_cancel then
+      state.active_request_cancel()
+      state.active_request_cancel = nil
+      state.loading = false
+      local render_module = require("chatforge.ui.render")
+      render_module.stop_forging_status()
+      render_module.append_status("Request cancelled.", "error")
+      vim.notify("[chatforge] Request cancelled.", vim.log.levels.INFO)
+    else
+      vim.notify("[chatforge] No active request to stop.", vim.log.levels.INFO)
+    end
+  end, { desc = "Stop the active chat request" })
+
+  -- ── :ChatBackend status|start|stop|switch|models ─────────────────────
   vim.api.nvim_create_user_command("ChatBackend", function(cmd)
     backend_control.command(cmd.args)
   end, {
     desc = "Manage chatforge backend helpers",
     nargs = "?",
     complete = function()
-      return { "status", "start", "stop" }
+      return { "status", "start", "stop", "switch", "models" }
     end,
   })
  
