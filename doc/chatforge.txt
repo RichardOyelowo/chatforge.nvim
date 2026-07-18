@@ -22,11 +22,11 @@ CONTENTS                                                    *chatforge-contents*
 =============================================================================
 INTRODUCTION                                                *chatforge*
 
-ChatForge keeps an Ollama conversation for each source buffer. Edit requests
+ChatForge keeps a conversation for each source buffer. Edit requests
 stream into the live Neovim buffer as marked proposals. Accept writes a fresh
 proposal to disk. Reject restores its saved original lines in memory.
 
-Version 0.2.3 supports one Ollama backend. It handles one active request and
+Version 0.3.0 supports Ollama and OpenAI-compatible backends. It handles one active request and
 one staged edit workflow at a time. Chat and model state last only for the
 current Neovim process.
 
@@ -41,19 +41,19 @@ Requirements:
 
 - Neovim 0.10 or newer
 - curl in $PATH
-- Ollama
-- An installed Ollama model
+- Ollama (if using local models)
+- An installed model (Ollama or OpenAI-compatible)
 
 lazy.nvim example: >lua
 
   {
     "RichardOyelowo/chatforge.nvim",
-    version = "v0.2.3",
+    version = "v0.3.0",
     cmd = {
       "Chat", "ChatSend", "ChatEdit", "ChatModel", "ChatReset",
       "ChatApply", "ChatAccept", "ChatDiff", "ChatReviewDiff",
       "ChatPreview", "ChatReject", "ChatNextChange", "ChatPrevChange",
-      "ChatBackend",
+      "ChatBackend", "ChatStop",
     },
     opts = {
       default_model = "llama3",
@@ -191,7 +191,7 @@ Use braces for a named directory: >vim
 <
 Named directory paths stay under |:pwd|. A leading slash is stripped, so
 `@{dir /lua}` means `<cwd>/lua`. Absolute directory paths, `~`, and environment
-variable expansion are not supported in version 0.2.3.
+variable expansion are not supported in version 0.3.0.
 
 Directory listings are not recursive. One read returns at most 64 entries.
 
@@ -289,7 +289,7 @@ buffer state. Staged metadata remains available. |:ChatDiff| compares the saved
 original snapshot with the proposal. It does not include the newer user-edited
 buffer.
 
-Version 0.2.3 has no force-accept or force-reject command.
+Version 0.3.0 has no force-accept or force-reject command.
 
 =============================================================================
 REVIEW COMMANDS                                         *chatforge-review*
@@ -359,17 +359,20 @@ COMMANDS                                               *chatforge-commands*
                                                           *:ChatReset*
 :ChatReset           Ignore the current request result, reject fresh staged
                      work, clear all staged metadata and this buffer's history,
-                     then redraw the chat. The underlying curl job is not
-                     stopped.
+                     then redraw the chat.
+
+                                                          *:ChatStop*
+:ChatStop            Stop the active request and cancel the underlying curl job.
 
 Commands for review are documented at |chatforge-review|.
 
                                                         *:ChatBackend*
 :ChatBackend         Same as `:ChatBackend status`.
-:ChatBackend status  Show tracked Ollama server and model-pull job states.
+:ChatBackend status  Show active provider and model, and Ollama job state.
 :ChatBackend start   Show `ollama serve`. It does not start a server.
-:ChatBackend stop    Stop a plugin-managed model pull or server job. Version
-                     0.2.3 does not create a server job itself.
+:ChatBackend stop    Stop a plugin-managed model pull or server job.
+:ChatBackend switch  Switch active provider and model for the current buffer.
+:ChatBackend models  List available models for the current provider.
 
 When Ollama is unreachable, ChatForge can show `ollama serve` or ignore the
 error. When a model is missing, it can run `ollama pull <model>` as a Neovim
@@ -379,7 +382,7 @@ plugin-managed pull. It cannot stop a server started in another terminal.
 =============================================================================
 CONFIGURATION                                           *chatforge-config*
 
-All fields are optional. Version 0.2.3 defaults: >lua
+All fields are optional. Version 0.3.0 defaults: >lua
 
   require("chatforge").setup({
     default_model = "llama3",
@@ -428,7 +431,7 @@ Show `[chatforge]` dispatch, request, parser, and backend notifications.
 `system_prompt` ~
 System message prepended to every request. Use an empty string to omit it.
 
-Unknown fields remain in the merged configuration but version 0.2.3 does not
+Unknown fields remain in the merged configuration but version 0.3.0 does not
 use them.
 
 =============================================================================
@@ -465,7 +468,7 @@ The check reports:
 - default model presence in the returned model list
 - render-markdown.nvim and dressing.nvim detection
 
-The state-directory check is diagnostic. Version 0.2.3 keeps conversations in
+The state-directory check is diagnostic. Version 0.3.0 keeps conversations in
 memory and does not persist them in that directory.
 
 =============================================================================
