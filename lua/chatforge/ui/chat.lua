@@ -358,7 +358,7 @@ local function do_send(src_bufnr, input, opts)
         model = model,
         prompt_summary = input,
       },
-      defer_source = true,
+      defer_source = (dispatched.action == "edit_file" or dispatched.action == "create_file") and not edit_target,
     }
   end
 
@@ -470,7 +470,22 @@ local function do_send(src_bufnr, input, opts)
       end
     end
     log.log("pending_blocks=%d", #state.pending_blocks)
-    render.append_segments(segments)
+    if should_stage then
+      local filtered = {}
+      for _, seg in ipairs(segments) do
+        if seg.type ~= "code" then
+          table.insert(filtered, seg)
+        else
+          local line_count = #vim.split(seg.content or "", "\n")
+          if line_count <= 5 then
+            table.insert(filtered, seg)
+          end
+        end
+      end
+      render.append_segments(filtered)
+    else
+      render.append_segments(segments)
+    end
     if stream and stream.finished and state.staged_changes[1] then
       render.append_status("Implementation #1 is staged live in the source buffer. Preview with :ChatPreview 1. Review with :ChatDiff 1. Keep with :ChatAccept or undo with :ChatReject.")
     end
@@ -651,12 +666,23 @@ function M.open(src_bufnr)
       render.clamp_scroll()
     end,
   })
-  vim.api.nvim_create_autocmd({ "WinScrolled", "CursorMoved" }, {
+  vim.api.nvim_create_autocmd("WinScrolled", {
     group = resize_group,
     callback = function()
-      if not state.chat_is_open() then
-        return
+      local winid = tonumber(vim.fn.expand("<amatch>"))
+      if winid == state.chat_winnr then
+        vim.schedule(function()
+          if state.chat_is_open() then
+            render.clamp_scroll()
+          end
+        end)
       end
+    end,
+  })
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    group = resize_group,
+    buffer = bufnr,
+    callback = function()
       vim.schedule(function()
         if state.chat_is_open() then
           render.clamp_scroll()
