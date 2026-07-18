@@ -138,15 +138,62 @@ function M.offer_model_pull(model, reason)
 end
 
 function M.command(arg)
-  arg = (arg or "status"):lower()
-  if arg == "start" then
+  local parts = vim.split(arg or "", "%s+")
+  local subcommand = (parts[1] or "status"):lower()
+
+  if subcommand == "start" then
     M.start_ollama()
-  elseif arg == "stop" then
+  elseif subcommand == "stop" then
     M.stop_ollama()
-  elseif arg == "status" then
-    notify("Ollama backend status: server=" .. M.ollama_status() .. ", pull=" .. M.pull_status())
+  elseif subcommand == "status" then
+    local src = state.source_bufnr or vim.api.nvim_get_current_buf()
+    local prov = state.get_provider(src)
+    local mod = state.get_model(src)
+    notify(string.format("Active provider: %s, Model: %s", prov, mod))
+    if prov == "ollama" then
+      notify("Ollama backend status: server=" .. M.ollama_status() .. ", pull=" .. M.pull_status())
+    end
+  elseif subcommand == "switch" then
+    local prov = parts[2]
+    if not prov or prov == "" then
+      notify("Usage: :ChatBackend switch <provider_name>", vim.log.levels.WARN)
+      return
+    end
+    local providers = require("chatforge.providers")
+    if not vim.tbl_contains(providers.list(), prov) then
+      notify("Unknown provider: " .. prov .. ". Available: " .. table.concat(providers.list(), ", "), vim.log.levels.WARN)
+      return
+    end
+    local src = state.source_bufnr or vim.api.nvim_get_current_buf()
+    state.set_provider(src, prov)
+    local cfg_module = require("chatforge.config")
+    local default_mod = "llama3"
+    if prov == "openai_compatible" then
+      default_mod = (cfg_module.values.providers and cfg_module.values.providers.openai_compatible and cfg_module.values.providers.openai_compatible.model) or "gpt-4o"
+    else
+      default_mod = cfg_module.values.default_model or "llama3"
+    end
+    state.set_model(src, default_mod)
+    notify(string.format("Switched buffer to provider '%s' with model '%s'", prov, default_mod))
+  elseif subcommand == "models" then
+    local src = state.source_bufnr or vim.api.nvim_get_current_buf()
+    local prov = state.get_provider(src)
+    local providers = require("chatforge.providers")
+    local be = providers.get(prov)
+    if not be then
+      notify("No active provider found for buffer.", vim.log.levels.ERROR)
+      return
+    end
+    notify("Fetching models for " .. prov .. "...")
+    be.list_models(function(models)
+      if #models == 0 then
+        notify("No models found for " .. prov)
+      else
+        notify("Available models for " .. prov .. ": " .. table.concat(models, ", "))
+      end
+    end)
   else
-    notify("Usage: :ChatBackend start|stop|status", vim.log.levels.WARN)
+    notify("Usage: :ChatBackend status|start|stop|switch|models", vim.log.levels.WARN)
   end
 end
 
