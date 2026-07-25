@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-17
+
+### Added
+
+- Multi-provider support with provider registry and standard streaming contract.
+- OpenAI-compatible API provider with SSE streaming (`openai_compatible`).
+- `:ChatStop` command to cancel active requests and stop underlying curl jobs.
+- `:ChatBackend switch <provider>` and `:ChatBackend models` subcommands.
+
+### Changed
+
+- Staging now uses diff hunks via `vim.diff` for non-disruptive insertions and deletions without altering unchanged lines.
+- Proposed line highlight style updated to background tint (`#2e3b52`) instead of underline.
+- Chat buffer excludes large staged code blocks (over 5 lines) when code is staged directly in the source buffer.
+- Restricted scroll clamping autocmds to prevent window bouncing during input.
+
+### Fixed
+
+- Health check now verifies all registered providers via the new health contract.
+
 ## [0.2.3] - 2026-06-26
 
 ### Added
@@ -95,7 +115,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Normal prose after bare `@file` is never interpreted as a path.
 - Stale Accept and Reject operations stop before overwriting newer buffer edits.
 
-[Unreleased]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.2.0...v0.2.1
