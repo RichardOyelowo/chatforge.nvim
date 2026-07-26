@@ -29,11 +29,8 @@ local function check_providers()
         end
         done = true
       end)
-      local start = vim.loop.hrtime()
-      while not done and (vim.loop.hrtime() - start) < 2.5e9 do
-        vim.cmd("sleep 10m")
-      end
-      if not done then
+      local wait_ok = vim.wait(2500, function() return done end, 10)
+      if not wait_ok then
         vim.health.warn(name .. ": health check timed out")
       end
     end
