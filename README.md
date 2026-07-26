@@ -10,7 +10,7 @@ ChatForge keeps the coding assistant inside the editor flow:
 4. Review the diff.
 5. Accept to write it, or reject to restore the original text.
 
-Version `0.2.3` is focused on making that loop reliable. It uses Ollama, keeps context explicit, avoids global keymaps, and treats AI edits as reversible proposals before they reach disk.
+Version `0.3.0` is focused on multi-provider support, reliable staged edits, and interactive model selection. It supports Ollama, OpenAI-compatible, Anthropic (Claude), and DeepSeek providers while keeping context explicit and treating AI edits as reversible proposals before they reach disk.
 
 ## Why ChatForge
 
@@ -20,18 +20,17 @@ The main design choices are:
 
 - **Live staged edits:** edit requests stream into the opened source buffer.
 - **Review before write:** `:ChatAccept` writes, `:ChatReject` restores.
-- **Per-buffer sessions:** each source buffer keeps its own model and chat history.
+- **Per-buffer sessions:** each source buffer keeps its own provider, model, and chat history.
+- **Multi-provider support:** Ollama, OpenAI-compatible, Anthropic (Claude), DeepSeek.
 - **Explicit context:** use `@file`, `@{file path}`, `@dir`, or `@{dir path}` when the model needs code or project layout.
 - **Related file memory:** recently shared files can be reused when you ask whether files match each other, such as CSS against HTML.
 - **No surprise keymaps:** ChatForge creates commands and buffer-local input mappings only.
-- **Local-first backend:** Ollama is the v0.2 backend. No API key is required.
 
 ## Requirements
 
 - Neovim 0.10 or newer
 - `curl` in `$PATH`
-- [Ollama](https://ollama.com)
-- An installed Ollama model, such as `llama3`
+- Local or API model provider (Ollama, OpenAI, Anthropic, DeepSeek)
 
 Optional:
 
@@ -47,12 +46,17 @@ Both optional plugins are detected by `:checkhealth chatforge`.
 ```lua
 {
   "RichardOyelowo/chatforge.nvim",
-  version = "v0.2.3",
+  version = "v0.3.0",
+  dependencies = {
+    "nvim-lua/plenary.nvim",
+  },
   cmd = {
     "Chat",
     "ChatSend",
     "ChatEdit",
     "ChatModel",
+    "ChatForgeSelectModel",
+    "ChatForgeSetModel",
     "ChatReset",
     "ChatApply",
     "ChatAccept",
@@ -63,10 +67,17 @@ Both optional plugins are detected by `:checkhealth chatforge`.
     "ChatNextChange",
     "ChatPrevChange",
     "ChatBackend",
+    "ChatStop",
   },
   opts = {
+    default_provider = "ollama",
     default_model = "llama3",
-    ollama_url = "http://localhost:11434",
+    providers = {
+      ollama = { url = "http://localhost:11434" },
+      openai_compatible = { base_url = "https://api.openai.com/v1", model = "gpt-4o" },
+      anthropic = { base_url = "https://api.anthropic.com", model = "claude-3-5-sonnet-20241022" },
+      deepseek = { base_url = "https://api.deepseek.com", model = "deepseek-chat" },
+    },
   },
 }
 ```
