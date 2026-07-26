@@ -4,7 +4,7 @@
 --   @{file path/to/file} inject a named file
 --   @dir                 inject the current working directory
 --   @{dir path/to/dir}   inject a named directory
---   explain / fix / refactor prefix → inject current buffer content
+--   explain / fix / refactor prefix -> inject current buffer content
 
 local M     = {}
 local log   = require("chatforge.utils.logger")
@@ -126,19 +126,6 @@ local EDIT_PATTERNS = {
   "i%s+want%s+.*improved",
 }
 
-local function classify(input)
-  for _, rule in ipairs(RULES) do
-    local m = { input:match(rule.pattern) }
-    if m[1] ~= nil then
-      return rule.action, rule.capture and m[rule.capture] or nil
-    end
-  end
-  if M.is_edit_request(input) then
-    return "edit_file", nil
-  end
-  return "chat", nil
-end
-
 function M.is_read_only_request(input)
   local lower = (input or ""):lower()
   for _, pattern in ipairs(READ_ONLY_PATTERNS) do
@@ -162,8 +149,19 @@ function M.is_edit_request(input)
   return false
 end
 
--- Read a file from disk and return its contents, or an error string.
--- Uses vim.fn.expand so ~, $VAR, relative, and absolute paths all work as-is.
+local function classify(input)
+  for _, rule in ipairs(RULES) do
+    local m = { input:match(rule.pattern) }
+    if m[1] ~= nil then
+      return rule.action, rule.capture and m[rule.capture] or nil
+    end
+  end
+  if M.is_edit_request(input) then
+    return "edit_file", nil
+  end
+  return "chat", nil
+end
+
 local function read_file(path)
   local expanded = vim.fn.expand(path)
   local f, err = io.open(expanded, "r")
@@ -173,35 +171,28 @@ local function read_file(path)
   return contents, nil
 end
 
--- True when the path means "inject the currently open buffer" rather than read a real path.
 local function is_current_file_ref(path)
   return path == "/" or path == "." or path == ""
 end
 
--- Resolve a dir path relative to cwd.
--- "/" and "." both mean cwd. No way to escape outside the project root.
--- by accident. "/src" means cwd/src, not filesystem /src.
 local function resolve_dir_path(path)
   local cwd = vim.fn.getcwd()
   if path == "/" or path == "." or path == "" then
     return cwd
   end
-  -- Strip a leading slash so @{dir /src} means cwd/src.
   local stripped = path:match("^/(.+)$")
   if stripped then
     return cwd .. "/" .. stripped
   end
-  -- relative path: resolve from cwd
   return cwd .. "/" .. path
 end
 
--- Return a simple directory listing (one level deep).
 local function read_dir(path)
   local resolved = resolve_dir_path(path)
-  local handle = vim.loop.fs_opendir(resolved, nil, 64)
+  local handle = vim.uv.fs_opendir(resolved, nil, 64)
   if not handle then return nil, "cannot open dir: " .. resolved end
-  local entries, err2 = vim.loop.fs_readdir(handle)
-  vim.loop.fs_closedir(handle)
+  local entries, err2 = vim.uv.fs_readdir(handle)
+  vim.uv.fs_closedir(handle)
   if not entries then return nil, err2 or "readdir failed" end
   local lines = { "Directory: " .. resolved }
   table.sort(entries, function(a, b) return a.name < b.name end)
@@ -220,8 +211,6 @@ local function cursor_line_for_buffer(bufnr)
   return 1
 end
 
--- Named context uses braces so normal prose after a bare token is never
--- interpreted as a path: "review @file fully" means current buffer + "fully".
 local function resolve_at_mentions(input, src_bufnr)
   local injections = {}
   local contexts = {}
@@ -257,8 +246,7 @@ local function resolve_at_mentions(input, src_bufnr)
     return (value:gsub("^%s+", ""):gsub("%s+$", ""))
   end
 
-  -- Resolve explicit named contexts first. Their replacement is held behind a
-  -- placeholder so tokens inside injected source code are not parsed again.
+  -- Resolve explicit named contexts first
   resolved = resolved:gsub("@%{[fF][iI][lL][eE]%s*([^}]*)%}", function(raw_path)
     local path = trim(raw_path)
     if is_current_file_ref(path) then
@@ -270,28 +258,6 @@ local function resolve_at_mentions(input, src_bufnr)
     end
     local ft = vim.filetype.match({ filename = path }) or ""
     table.insert(injections, { tag = "@{file}", path = path, ok = true })
-    local block = string.format(
-      "\n\n[ChatForge context: named file %s. This is accessible user-provided code.]\nFile: %s\n```%s\n%s\n```",
-      path,
-      path,
-      ft,
-      contents
-    )
-    table.insert(contexts, { path = vim.fn.expand(path), block = block })
-    return hold(block)
-  end)
-
-  resolved = resolved:gsub("{[aA][fF][iI][lL][eE]%s+([^}]*)}", function(raw_path)
-    local path = trim(raw_path)
-    if is_current_file_ref(path) then
-      return current_file_block("(current buffer)")
-    end
-    local contents, err = read_file(path)
-    if err then
-      return hold("\n<!-- {afile " .. path .. "} could not be read: " .. err .. " -->")
-    end
-    local ft = vim.filetype.match({ filename = path }) or ""
-    table.insert(injections, { tag = "{afile}", path = path, ok = true })
     local block = string.format(
       "\n\n[ChatForge context: named file %s. This is accessible user-provided code.]\nFile: %s\n```%s\n%s\n```",
       path,
@@ -344,8 +310,9 @@ local function resolve_at_mentions(input, src_bufnr)
     ))
   end)
 
+  -- Safely restore held placeholders escaping gsub magic characters (%)
   for key, block in pairs(placeholders) do
-    resolved = resolved:gsub(vim.pesc(key), block)
+    resolved = resolved:gsub(vim.pesc(key), function() return block end)
   end
 
   return resolved, injections, contexts
@@ -362,7 +329,6 @@ local function should_include_related_context(input)
     or lower:match("css")
     or lower:match("@file")
     or lower:match("@%{file")
-    or lower:match("{afile")
 end
 
 local function add_related_contexts(input, related_contexts, current_contexts)
@@ -448,20 +414,17 @@ end
 
 function M.dispatch(input, src_bufnr, opts)
   opts = opts or {}
-  -- 1. Resolve @file / @dir mentions first
   local resolved, injections, contexts = resolve_at_mentions(input, src_bufnr)
   for _, inj in ipairs(injections) do
     log.log("dispatch: injected %s %s", inj.tag, inj.path)
   end
 
-  -- 2. Classify action from the user's words, not injected source text.
   local action, target = classify(input)
   if opts.force_stage and action ~= "create_file" and action ~= "delete_file" then
     action = "edit_file"
     target = nil
   end
 
-  -- 3. Enrich with buffer content for edit/explain actions
   resolved = add_related_contexts(resolved, opts.related_contexts, contexts)
   local prompt = build_prompt(resolved, action, src_bufnr)
 
