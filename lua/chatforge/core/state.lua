@@ -1,66 +1,80 @@
 local M = {}
 
----@type table<number, { model:string, history:{role:string,content:string,display:string|nil}[] }>
+---@type table<number, { provider:string|nil, model:string|nil, history:{role:string,content:string,display:string|nil}[] }>
 M.buffers = {}
 
-M.chat_bufnr    = nil  ---@type number|nil
-M.chat_winnr    = nil  ---@type number|nil
-M.input_bufnr   = nil  ---@type number|nil
-M.input_winnr   = nil  ---@type number|nil
-M.source_bufnr  = nil  ---@type number|nil
-M.source_winnr  = nil  ---@type number|nil
-M.chat_source_bufnr = nil  ---@type number|nil
-M.input_lines = { "" }
-M.chat_lines = {}
-M.chat_spans = {}
-M.chat_entries = {}
-M.last_status_entry = nil
+M.chat_bufnr            = nil  ---@type number|nil
+M.chat_winnr            = nil  ---@type number|nil
+M.input_bufnr           = nil  ---@type number|nil
+M.input_winnr           = nil  ---@type number|nil
+M.source_bufnr          = nil  ---@type number|nil
+M.source_winnr          = nil  ---@type number|nil
+M.chat_source_bufnr     = nil  ---@type number|nil
+M.input_lines           = { "" }
+M.chat_lines           = {}
+M.chat_spans           = {}
+M.chat_entries         = {}
+M.last_status_entry     = nil
 M.forging_status_active = false
-M.forging_status_entry = nil
-M.forging_status_frame = 1
-M.render_ns = vim.api.nvim_create_namespace("chatforge_chat_render")
-M.loading       = false
-M.request_id    = 0
-M.applying      = false
-M.edit_target   = nil  ---@type {bufnr:number,line1:number,line2:number,kind:string}|nil
-M.pending_blocks = {}  ---@type {lang:string,content:string,applied:boolean,target:table|nil}[]
-M.staged_changes = {}  ---@type table<number, table>
-M.recent_contexts = {}
-M.streaming_change = nil
-M.ollama_job = nil
-M.ollama_pull_job = nil
-M.ollama_job_stopping = false
+M.forging_status_entry  = nil
+M.forging_status_frame  = 1
+M.render_ns             = vim.api.nvim_create_namespace("chatforge_chat_render")
+M.loading               = false
+M.request_id            = 0
+M.applying              = false
+M.edit_target           = nil  ---@type {bufnr:number,line1:number,line2:number,kind:string}|nil
+M.pending_blocks        = {}  ---@type {lang:string,content:string,applied:boolean,target:table|nil}[]
+M.staged_changes        = {}  ---@type table<number, table>
+M.recent_contexts       = {}
+M.streaming_change      = nil
+M.ollama_job            = nil
+M.ollama_pull_job       = nil
+M.ollama_job_stopping   = false
 M.ollama_pull_job_stopping = false
 M.active_request_cancel = nil
 
-local config
-local function default_provider()
-  config = config or require("chatforge.config")
-  return config.values.default_provider or "ollama"
+local function resolve_configured_provider()
+  local config = require("chatforge.config")
+  return config.values and config.values.default_provider
 end
 
-local function default_model(provider_name)
-  config = config or require("chatforge.config")
-  if provider_name == "openai_compatible" then
-    return (config.values.providers and config.values.providers.openai_compatible and config.values.providers.openai_compatible.model) or "gpt-4o"
+local function resolve_configured_model(provider_name)
+  local config = require("chatforge.config")
+  if provider_name and config.values and config.values.providers and config.values.providers[provider_name] then
+    local p_model = config.values.providers[provider_name].model
+    if p_model and p_model ~= "" then
+      return p_model
+    end
   end
-  return config.values.default_model or "llama3"
+  return config.values and config.values.default_model
 end
 
 function M.get_buf(bufnr)
   if not M.buffers[bufnr] then
-    local prov = default_provider()
-    local mod = default_model(prov)
+    local prov = resolve_configured_provider()
+    local mod = resolve_configured_model(prov)
     M.buffers[bufnr] = { model = mod, provider = prov, history = {} }
   end
   return M.buffers[bufnr]
 end
 
-function M.get_model(bufnr)   return M.get_buf(bufnr).model end
-function M.set_model(bufnr, model) M.get_buf(bufnr).model = model end
+function M.get_model(bufnr)
+  local buf = M.get_buf(bufnr)
+  return buf.model or resolve_configured_model(buf.provider)
+end
 
-function M.get_provider(bufnr) return M.get_buf(bufnr).provider end
-function M.set_provider(bufnr, provider) M.get_buf(bufnr).provider = provider end
+function M.set_model(bufnr, model)
+  M.get_buf(bufnr).model = model
+end
+
+function M.get_provider(bufnr)
+  local buf = M.get_buf(bufnr)
+  return buf.provider or resolve_configured_provider()
+end
+
+function M.set_provider(bufnr, provider)
+  M.get_buf(bufnr).provider = provider
+end
 
 function M.append_message(bufnr, role, content, display)
   table.insert(M.get_buf(bufnr).history, { role = role, content = content, display = display })
