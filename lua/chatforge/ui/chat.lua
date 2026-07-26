@@ -690,6 +690,21 @@ function M.open(src_bufnr)
       end)
     end,
   })
+  vim.api.nvim_create_autocmd("BufUnload", {
+    buffer = bufnr,
+    once = true,
+    callback = function()
+      pcall(vim.api.nvim_del_augroup_by_id, resize_group)
+      state.chat_winnr = nil
+      state.chat_bufnr = nil
+      state.input_winnr = nil
+      state.chat_source_bufnr = nil
+      if state.input_bufnr and vim.api.nvim_buf_is_valid(state.input_bufnr) then
+        pcall(vim.api.nvim_buf_delete, state.input_bufnr, { force = true })
+      end
+      state.input_bufnr = nil
+    end,
+  })
   vim.api.nvim_create_autocmd("WinClosed", {
     pattern  = tostring(winnr),
     once     = true,

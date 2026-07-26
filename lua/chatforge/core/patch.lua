@@ -10,6 +10,9 @@ local function trim_trailing(line)
 end
 
 local function same_line(a, b)
+  if a == nil or b == nil then
+    return false
+  end
   return trim_trailing(a) == trim_trailing(b)
 end
 
