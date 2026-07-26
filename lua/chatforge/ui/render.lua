@@ -217,13 +217,16 @@ message_lines = function(content, opts)
   return lines
 end
 
-function M.write_header()
+function M.write_header(src_bufnr)
+  src_bufnr = src_bufnr or state.source_bufnr or vim.api.nvim_get_current_buf()
+  local prov = state.get_provider(src_bufnr) or "ollama"
+  local mod = state.get_model(src_bufnr) or "llama3"
   state.chat_entries = {
     {
       type = "raw",
       kind = "muted",
       lines = {
-        "# chatforge",
+        "# chatforge [" .. prov .. ":" .. mod .. "]",
         "",
         "Ask below. Code appears here and stages live in source.",
         "Accept keeps it. Reject restores it.",

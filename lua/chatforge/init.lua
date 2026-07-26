@@ -139,24 +139,64 @@ function M.setup(opts)
     end, 80)
   end, { desc = "Force a live staged chatforge edit", nargs = "*", range = true })
 
-  -- ── :ChatModel [model] ────────────────────────────────────────────────
-  vim.api.nvim_create_user_command("ChatModel", function(cmd)
+  -- ── :ChatModel / :ChatForgeSelectModel / :ChatForgeSetModel ───────────
+  local function select_model_cmd(cmd)
     local src = vim.api.nvim_get_current_buf()
     if state.is_plugin_buf(src) then
       src = state.source_bufnr or src
     end
+    local render = require("chatforge.ui.render")
     if cmd.args ~= "" then
       state.set_model(src, cmd.args)
       vim.notify("[chatforge] Model → " .. cmd.args, vim.log.levels.INFO)
-    else
-      dialog.input({ prompt = "Model: ", default = state.get_model(src) }, function(model)
-        if model and model ~= "" then
-          state.set_model(src, model)
-          vim.notify("[chatforge] Model → " .. model, vim.log.levels.INFO)
+      if state.chat_is_open() then
+        render.write_header(src)
+      end
+      return
+    end
+
+    local prov = state.get_provider(src) or "ollama"
+    local providers = require("chatforge.providers")
+    local be = providers.get(prov)
+    if not be then
+      vim.notify("[chatforge] Provider not found: " .. prov, vim.log.levels.ERROR)
+      return
+    end
+
+    be.list_models(function(models)
+      if not models or #models == 0 then
+        dialog.input({ prompt = "Model (" .. prov .. "): ", default = state.get_model(src) }, function(model)
+          if model and model ~= "" then
+            state.set_model(src, model)
+            vim.notify("[chatforge] Model → " .. model, vim.log.levels.INFO)
+            if state.chat_is_open() then
+              render.write_header(src)
+            end
+          end
+        end)
+        return
+      end
+
+      dialog.select(models, {
+        prompt = "Select ChatForge Model (" .. prov .. "):",
+        format_item = function(item)
+          return item == state.get_model(src) and (item .. " (active)") or item
+        end,
+      }, function(choice)
+        if choice then
+          state.set_model(src, choice)
+          vim.notify("[chatforge] Model → " .. choice, vim.log.levels.INFO)
+          if state.chat_is_open() then
+            render.write_header(src)
+          end
         end
       end)
-    end
-  end, { desc = "Set chatforge model for current buffer", nargs = "?" })
+    end)
+  end
+
+  vim.api.nvim_create_user_command("ChatModel", select_model_cmd, { desc = "Set or select chatforge model for current buffer", nargs = "?" })
+  vim.api.nvim_create_user_command("ChatForgeSelectModel", select_model_cmd, { desc = "Interactively select chatforge model for current buffer", nargs = "?" })
+  vim.api.nvim_create_user_command("ChatForgeSetModel", select_model_cmd, { desc = "Set chatforge model for current buffer", nargs = "?" })
  
   -- ── :ChatReset ────────────────────────────────────────────────────────
   vim.api.nvim_create_user_command("ChatReset", function()
