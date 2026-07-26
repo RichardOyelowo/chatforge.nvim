@@ -28,6 +28,14 @@ M.defaults = {
       base_url = "https://api.openai.com/v1",
       model = "gpt-4o",
     },
+    anthropic = {
+      base_url = "https://api.anthropic.com",
+      model = "claude-3-5-sonnet-20241022",
+    },
+    deepseek = {
+      base_url = "https://api.deepseek.com",
+      model = "deepseek-chat",
+    },
   },
   debug         = false,
   system_prompt = "You are a helpful coding assistant embedded in Neovim. "

@@ -22,5 +22,7 @@ end
 -- Register default providers
 M.register("ollama", require("chatforge.providers.ollama"))
 M.register("openai_compatible", require("chatforge.providers.openai"))
+M.register("anthropic", require("chatforge.providers.anthropic"))
+M.register("deepseek", require("chatforge.providers.deepseek"))
 
 return M
