@@ -1,12 +1,14 @@
 local M = {}
  
 ---@class AiChatConfig
----@field default_model  string   Model tag passed to Ollama (e.g. "llama3", "codestral")
----@field ollama_url     string   Base URL for the Ollama API
----@field max_tokens     number   Max tokens to request
----@field temperature    number   Sampling temperature
----@field system_prompt  string   Prepended on every request
----@field debug          boolean  Enable debug logging
+---@field default_model    string  Fallback model tag used when a provider has no `providers.<name>.model` set (e.g. "llama3", "codestral")
+---@field default_provider string  Provider used for new buffers: "ollama" | "openai_compatible" | "anthropic" | "deepseek"
+---@field ollama_url       string  Deprecated top-level fallback for the Ollama base URL; prefer `providers.ollama.url`
+---@field providers        table   Per-provider config, each with at least `.model` and, where applicable, `.base_url`/`.url` and `.api_key`
+---@field max_tokens       number  Max tokens to request
+---@field temperature      number  Sampling temperature
+---@field system_prompt    string  Prepended on every request
+---@field debug            boolean Enable debug logging
 M.defaults = {
   default_model = "llama3",
   ollama_url    = "http://localhost:11434",
@@ -19,7 +21,7 @@ M.defaults = {
       incoming = "ChatforgeProposedChange",
     },
   },
-  default_provider = "ollama",
+  default_provider = "anthropic",
   providers = {
     ollama = {
       url = "http://localhost:11434",
@@ -53,4 +55,3 @@ function M.setup(opts)
 end
  
 return M
- 
