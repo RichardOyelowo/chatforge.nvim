@@ -1,6 +1,6 @@
 # <img src="images/chatforge_logo.svg" alt="ChatForge">
 
-Local-first, staged AI coding chat for Neovim.
+Provider-agnostic, staged AI coding chat for Neovim.
 
 ChatForge keeps the coding assistant inside the editor flow:
 
@@ -10,9 +10,9 @@ ChatForge keeps the coding assistant inside the editor flow:
 4. Review the diff.
 5. Accept to write it, or reject to restore the original text.
 
-Version `0.3.0` is focused on multi-provider support, reliable staged edits, and interactive model selection. It supports Ollama, OpenAI-compatible, Anthropic (Claude), and DeepSeek providers while keeping context explicit and treating AI edits as reversible proposals before they reach disk.
+Version `0.3.0` adds multi-provider support, reliable staged edits, and interactive model selection. Anthropic, OpenAI-compatible endpoints, DeepSeek, and Ollama all work behind the same streaming contract, so the workflow stays the same no matter which one answers the request. Context stays explicit and edits stay reversible proposals until you accept them.
 
-## Why ChatForge
+## Why This Project Matters
 
 Chat tools are useful, but copying code between a chat panel and an editor hides where a change will land. ChatForge stages changes in the source buffer itself. The proposed lines are highlighted, the original text is kept, and the file is written only when you accept the proposal.
 
@@ -21,7 +21,7 @@ The main design choices are:
 - **Live staged edits:** edit requests stream into the opened source buffer.
 - **Review before write:** `:ChatAccept` writes, `:ChatReject` restores.
 - **Per-buffer sessions:** each source buffer keeps its own provider, model, and chat history.
-- **Multi-provider support:** Ollama, OpenAI-compatible, Anthropic (Claude), DeepSeek.
+- **Any provider:** Anthropic, OpenAI-compatible endpoints, DeepSeek, or Ollama, switchable per buffer with `:ChatBackend switch`.
 - **Explicit context:** use `@file`, `@{file path}`, `@dir`, or `@{dir path}` when the model needs code or project layout.
 - **Related file memory:** recently shared files can be reused when you ask whether files match each other, such as CSS against HTML.
 - **No surprise keymaps:** ChatForge creates commands and buffer-local input mappings only.
@@ -30,7 +30,7 @@ The main design choices are:
 
 - Neovim 0.10 or newer
 - `curl` in `$PATH`
-- Local or API model provider (Ollama, OpenAI, Anthropic, DeepSeek)
+- A provider: an API key for Anthropic, OpenAI, or DeepSeek, or a local Ollama install
 
 Optional:
 
@@ -47,9 +47,7 @@ Both optional plugins are detected by `:checkhealth chatforge`.
 {
   "RichardOyelowo/chatforge.nvim",
   version = "v0.3.0",
-  dependencies = {
-    "nvim-lua/plenary.nvim",
-  },
+  -- No external plugin dependencies. Only `curl` on $PATH is required at runtime.
   cmd = {
     "Chat",
     "ChatSend",
@@ -70,27 +68,31 @@ Both optional plugins are detected by `:checkhealth chatforge`.
     "ChatStop",
   },
   opts = {
-    default_provider = "ollama",
-    default_model = "llama3",
+    default_provider = "anthropic",
     providers = {
-      ollama = { url = "http://localhost:11434" },
-      openai_compatible = { base_url = "https://api.openai.com/v1", model = "gpt-4o" },
       anthropic = { base_url = "https://api.anthropic.com", model = "claude-3-5-sonnet-20241022" },
+      openai_compatible = { base_url = "https://api.openai.com/v1", model = "gpt-4o" },
       deepseek = { base_url = "https://api.deepseek.com", model = "deepseek-chat" },
+      ollama = { url = "http://localhost:11434" },
     },
   },
 }
 ```
 
-Start Ollama:
+Set the API key for whichever provider you use:
+
+```sh
+export ANTHROPIC_API_KEY=sk-ant-...
+export OPENAI_API_KEY=sk-...
+export DEEPSEEK_API_KEY=sk-...
+```
+
+An `api_key` field under `providers.<name>` works the same way if you keep secrets out of your shell environment.
+
+Ollama needs no key, only a running server:
 
 ```sh
 ollama serve
-```
-
-Install the model in another terminal:
-
-```sh
 ollama pull llama3
 ```
 
@@ -259,7 +261,7 @@ Unreadable files become inline HTML context errors in the model prompt. The requ
 
 `@dir` injects a sorted, one-level listing of the current working directory. `@{dir path}` injects a sorted, one-level listing under the current working directory.
 
-Named directory paths stay under `:pwd`. A leading slash is stripped, so `@{dir /lua}` means `<cwd>/lua`. Absolute directory paths, `~`, and environment variable expansion are not supported in v0.2.3.
+Named directory paths stay under `:pwd`. A leading slash is stripped, so `@{dir /lua}` means `<cwd>/lua`. Absolute directory paths, `~`, and environment variable expansion are not supported yet.
 
 One directory read returns at most 64 entries.
 
@@ -289,7 +291,7 @@ Injected source is protected from a second context pass. An `@{file ...}` string
 | `:Chat` | Open ChatForge for the current source buffer, or focus the existing chat input. |
 | `:ChatSend [message]` | Send text. With no text, focus the input or send its contents. A range sends a selected-line rewrite. |
 | `:ChatEdit <message>` | Force a live staged edit in the source buffer. A range rewrites only the selected lines. |
-| `:ChatModel [model]` | Set the model for the current source buffer. With no argument, open a prompt. |
+| `:ChatModel [model]` | Set the model for the current source buffer. With no argument, open a picker of models available from the active provider. |
 | `:ChatReset` | Ignore the current request result, reject fresh staged work, clear staged metadata, clear remembered related context, and redraw the chat. |
 | `:ChatPreview [N]` | Open response block N in a float. Default: 1. |
 | `:ChatDiff [N]` | Open a diff for response block N. Default: 1. |
@@ -299,7 +301,14 @@ Injected source is protected from a second context pass. An `@{file ...}` string
 | `:ChatReject` | Restore original lines for all non-stale staged blocks. |
 | `:ChatNextChange` | Jump to the end of the first staged block. |
 | `:ChatPrevChange` | Jump to the start of the first staged block. |
-| `:ChatBackend [status\|start\|stop]` | Inspect backend helper state, show the Ollama start command, or stop a plugin-managed model pull. Default: `status`. |
+| `:ChatStop` | Cancel the active request and stop its `curl` job. |
+| `:ChatBackend status` | Show the active provider and model for the current buffer, plus Ollama job state when the active provider is Ollama. |
+| `:ChatBackend switch <provider>` | Switch the current buffer to `ollama`, `openai_compatible`, `anthropic`, or `deepseek`, and reset the model to that provider's configured default. |
+| `:ChatBackend models` | List models available from the current buffer's active provider. |
+| `:ChatBackend start` | Show the `ollama serve` command. It does not start a server. |
+| `:ChatBackend stop` | Stop a plugin-managed Ollama server or `ollama pull` job. |
+
+`:ChatForgeSelectModel` and `:ChatForgeSetModel` are aliases for `:ChatModel`, kept for discoverability.
 
 ## Safety Model
 
@@ -311,26 +320,44 @@ Staging is an in-memory buffer edit. It is not a disk write.
 
 The source buffer becomes modified during staging. Autosave plugins, manual `:write`, or other editor commands can still write the proposal before acceptance. ChatForge does not block external writes.
 
-There is no force-accept or force-reject command in v0.2.3. Review the diff and resolve stale buffers manually.
+There is no force-accept or force-reject command. Review the diff and resolve stale buffers manually.
 
 ## Backend And Model Recovery
 
-Ollama is the only backend in v0.2.3.
+Each provider reports failures through the same handler, so recovery looks different depending on what went wrong:
 
-If Ollama is unreachable, ChatForge offers to show the `ollama serve` command or ignore the error. `:ChatBackend start` also shows the command. It does not start an Ollama server.
+- **Missing API key.** Anthropic, OpenAI-compatible, and DeepSeek requests fail immediately with a message naming the expected environment variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`), or the `api_key` field to set under `providers.<name>` instead.
+- **Ollama unreachable.** ChatForge offers to show the `ollama serve` command or ignore the error. `:ChatBackend start` also shows the command. It does not start an Ollama server.
+- **Ollama model missing.** ChatForge can run `ollama pull <model>` as a Neovim job, show the command only, or ignore the error. `:ChatBackend stop` can stop a plugin-managed pull. It cannot stop an Ollama server started outside ChatForge.
 
-If the selected model is missing, ChatForge can run `ollama pull <model>` as a Neovim job, show the command only, or ignore the error. `:ChatBackend stop` can stop a plugin-managed pull. It cannot stop an Ollama server started outside ChatForge.
-
-`:ChatBackend status` reports tracked server and model-pull state. Since v0.2.3 does not start the server itself, server status normally reads `not-managed` even when Ollama is reachable.
+`:ChatBackend status` reports the active provider and model for the current buffer. For Ollama it also reports tracked server and model-pull state. Since ChatForge does not start the server itself, server status normally reads `not-managed` even when Ollama is reachable.
 
 ## Configuration
 
-All fields are optional. These are the v0.2.3 defaults:
+All fields are optional. These are the current defaults:
 
 ```lua
 require("chatforge").setup({
+  default_provider = "anthropic",
   default_model = "llama3",
   ollama_url = "http://localhost:11434",
+  providers = {
+    ollama = {
+      url = "http://localhost:11434",
+    },
+    openai_compatible = {
+      base_url = "https://api.openai.com/v1",
+      model = "gpt-4o",
+    },
+    anthropic = {
+      base_url = "https://api.anthropic.com",
+      model = "claude-3-5-sonnet-20241022",
+    },
+    deepseek = {
+      base_url = "https://api.deepseek.com",
+      model = "deepseek-chat",
+    },
+  },
   max_tokens = 4096,
   max_output_tokens = 2048,
   context_tokens = 64000,
@@ -351,17 +378,21 @@ require("chatforge").setup({
 
 | Field | Meaning |
 |---|---|
-| `default_model` | Initial Ollama model for each new source-buffer session. |
-| `ollama_url` | Base URL used for `/api/chat` and `/api/tags`. |
-| `max_output_tokens` | Ollama `num_predict` value. Takes precedence over `max_tokens`. |
-| `max_tokens` | Legacy fallback for `num_predict` when `max_output_tokens` is absent. |
-| `context_tokens` | Ollama `num_ctx` value. Separate from the 160-line automatic context cap. |
-| `temperature` | Ollama sampling temperature. |
+| `default_provider` | Provider used for new buffers: `ollama`, `openai_compatible`, `anthropic`, or `deepseek`. |
+| `default_model` | Fallback model used only when the active provider's own `providers.<name>.model` is unset. |
+| `providers.<name>.model` | Model tag for that provider. Read first when a new buffer picks its starting model. |
+| `providers.<name>.base_url` / `.url` | Base URL for that provider's API. Ollama uses `.url`; the others use `.base_url`. |
+| `providers.<name>.api_key` | API key for that provider, checked before the matching environment variable. |
+| `ollama_url` | Fallback base URL used only if `providers.ollama.url` is unset. |
+| `max_output_tokens` | Requested output token limit. Takes precedence over `max_tokens`. |
+| `max_tokens` | Legacy fallback for `max_output_tokens` when it is absent. |
+| `context_tokens` | Context window size passed to Ollama as `num_ctx`. Separate from the 160-line automatic context cap. |
+| `temperature` | Sampling temperature. |
 | `highlights.diff.incoming` | Highlight group applied to proposed lines. |
 | `debug` | Show `[chatforge]` dispatch, request, parser, and backend notifications. |
 | `system_prompt` | System message prepended to every request. Set to an empty string to omit it. |
 
-Unknown fields are retained by the config merge but are not used by v0.2.3.
+Unknown fields are retained by the config merge but are not used by ChatForge itself.
 
 ## Health Check
 
@@ -375,12 +406,11 @@ The health check reports:
 - `curl` availability
 - whether `setup()` ran
 - writable state directory status
-- Ollama `/api/tags` reachability
-- default model presence in the returned model list
+- reachability for every registered provider, using each provider's own health contract
 - render-markdown.nvim detection
 - dressing.nvim detection
 
-The writable state directory check is diagnostic. ChatForge v0.2.3 keeps chat sessions in memory and does not persist them there.
+The writable state directory check is diagnostic. ChatForge keeps chat sessions in memory and does not persist them there.
 
 ## Testing
 
@@ -390,9 +420,13 @@ From the repository root:
 nvim --headless -n -i NONE -u tests/minimal_init.lua -l tests/run.lua
 ```
 
-The suite needs Neovim 0.10 or newer. It does not need Ollama or external Lua test libraries.
+The suite needs Neovim 0.10 or newer. It does not need a running provider or external Lua test libraries.
 
 ## Troubleshooting
+
+### API Key Not Set
+
+Set the environment variable named in the error (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`), or add `api_key` under `providers.<name>` in `setup()`. Then run `:checkhealth chatforge`.
 
 ### `Ollama unreachable`
 
@@ -402,15 +436,17 @@ Start Ollama in a terminal:
 ollama serve
 ```
 
-Check `ollama_url`, then run `:checkhealth chatforge`.
+Check `providers.ollama.url` (or the legacy `ollama_url`), then run `:checkhealth chatforge`.
 
 ### Model Not Found
+
+For Ollama:
 
 ```sh
 ollama pull llama3
 ```
 
-Replace `llama3` with the model shown by `:ChatModel` or your configuration.
+Replace `llama3` with the model shown by `:ChatModel` or your configuration. For API providers, check that the model name matches one your account has access to; `:ChatBackend models` lists what the provider reports.
 
 ### A Proposal Will Not Accept Or Reject
 
@@ -434,7 +470,6 @@ Set `debug = true`, reproduce the problem, and inspect `:messages`.
 
 ## Known Limitations
 
-- Ollama is the only backend.
 - Chat and model state are not persisted across Neovim sessions.
 - One request can be active at a time across the plugin.
 - Reset ignores an active request's eventual result but does not stop its underlying `curl` job.
