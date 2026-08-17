@@ -57,7 +57,11 @@ local function reset_state()
   return state
 end
 
-require("chatforge.config").setup({ default_model = "test-model" })
+-- default_provider stays "ollama" here so default_model below (a generic
+-- placeholder, not tied to any real provider) is what buffers actually get.
+-- Anthropic, OpenAI-compatible, and DeepSeek each ship their own baked-in
+-- providers.<name>.model, which default_model_for() prefers over this value.
+require("chatforge.config").setup({ default_provider = "ollama", default_model = "test-model" })
 
 test("parser keeps text and indexes multiple fenced blocks", function()
   local parser = require("chatforge.core.parser")
