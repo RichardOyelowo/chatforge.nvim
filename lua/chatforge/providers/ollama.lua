@@ -2,9 +2,16 @@ local log = require("chatforge.utils.logger")
 
 local M = {}
 
+-- providers.ollama.url is the documented per-provider override; the
+-- top-level config.ollama_url is kept as a fallback for older configs.
+local function base_url(config)
+  local prov_cfg = config.providers and config.providers.ollama
+  return (prov_cfg and prov_cfg.url) or config.ollama_url or "http://localhost:11434"
+end
+
 function M.stream(params, handlers)
   local config = require("chatforge.config").values
-  local url = config.ollama_url .. "/api/chat"
+  local url = base_url(config) .. "/api/chat"
   
   local body = vim.json.encode({
     model = params.model,
@@ -106,7 +113,7 @@ end
 
 function M.list_models(cb)
   local config = require("chatforge.config").values
-  local url = config.ollama_url .. "/api/tags"
+  local url = base_url(config) .. "/api/tags"
   
   vim.system({
     "curl", "--silent", url
@@ -130,14 +137,15 @@ end
 
 function M.health(cb)
   local config = require("chatforge.config").values
-  local url = config.ollama_url .. "/api/tags"
+  local resolved_url = base_url(config)
+  local url = resolved_url .. "/api/tags"
 
   vim.system({
     "curl", "--silent", "--show-error", "--max-time", "2", url
   }, { text = true }, function(result)
     if result.code ~= 0 then
       local msg = result.stderr ~= "" and result.stderr or ("exit code " .. result.code)
-      vim.schedule(function() cb(false, "Ollama unreachable at " .. config.ollama_url .. ": " .. msg) end)
+      vim.schedule(function() cb(false, "Ollama unreachable at " .. resolved_url .. ": " .. msg) end)
       return
     end
     local ok, payload = pcall(vim.json.decode, result.stdout)
@@ -145,7 +153,7 @@ function M.health(cb)
       vim.schedule(function() cb(false, "Invalid response from Ollama") end)
       return
     end
-    vim.schedule(function() cb(true, "Ollama reachable at " .. config.ollama_url) end)
+    vim.schedule(function() cb(true, "Ollama reachable at " .. resolved_url) end)
   end)
 end
 
