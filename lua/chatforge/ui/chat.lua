@@ -9,9 +9,9 @@ local patch      = require("chatforge.core.patch")
 local log        = require("chatforge.utils.logger")
 
 local INPUT_HEIGHT = 8
- 
+
 -- ── buffer / window ────────────────────────────────────────────────────────
- 
+
 local function create_chat_buf()
   local b = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_name(b, "chatforge://chat")
@@ -30,7 +30,39 @@ local function create_input_buf()
   vim.bo[b].bufhidden  = "hide"
   vim.bo[b].swapfile   = false
   vim.bo[b].modifiable = true
-  vim.bo[b].completeopt = "menuone,noinsert,noselect"
+
+  -- completeopt has global scope in Neovim, so it cannot be set through
+  -- vim.bo. Swap it in on entry and restore whatever was there before on
+  -- exit, so only this buffer sees the chatforge completion behavior.
+  local input_completeopt = "menuone,noinsert,noselect"
+  local previous_completeopt = nil
+  local completeopt_group = vim.api.nvim_create_augroup("chatforge_input_completeopt_" .. b, { clear = true })
+  vim.api.nvim_create_autocmd("BufEnter", {
+    group = completeopt_group,
+    buffer = b,
+    callback = function()
+      previous_completeopt = vim.o.completeopt
+      vim.o.completeopt = input_completeopt
+    end,
+  })
+  vim.api.nvim_create_autocmd("BufLeave", {
+    group = completeopt_group,
+    buffer = b,
+    callback = function()
+      if previous_completeopt then
+        vim.o.completeopt = previous_completeopt
+      end
+    end,
+  })
+  vim.api.nvim_create_autocmd("BufUnload", {
+    group = completeopt_group,
+    buffer = b,
+    once = true,
+    callback = function()
+      pcall(vim.api.nvim_del_augroup_by_id, completeopt_group)
+    end,
+  })
+
   vim.api.nvim_buf_set_lines(b, 0, -1, false, { "" })
   return b
 end
@@ -293,9 +325,9 @@ end
 local function sync_input_before_send()
   read_input_lines()
 end
- 
+
 -- ── send flow ──────────────────────────────────────────────────────────────
- 
+
 local function do_send(src_bufnr, input, opts)
   opts = opts or {}
   if not input or input:match("^%s*$") then
@@ -399,10 +431,10 @@ local function do_send(src_bufnr, input, opts)
       end
     end
   end
- 
+
   render.append_user(input, model)
   render.start_forging_status()
- 
+
   client.complete(src_bufnr, request_history(src_bufnr, dispatched.prompt), function(text, err)
     if request_id ~= state.request_id then
       return
@@ -588,7 +620,7 @@ function M.send_message(src_bufnr, input, opts)
     vim.notify("[chatforge] Request in progress…", vim.log.levels.WARN)
     return
   end
- 
+
   if input then
     do_send(src_bufnr, input, opts)
   else
@@ -600,9 +632,9 @@ function M.send_message(src_bufnr, input, opts)
     end
   end
 end
- 
+
 -- ── reset ──────────────────────────────────────────────────────────────────
- 
+
 function M.reset(src_bufnr)
   if state.applying then
     vim.notify("[chatforge] Wait for the staged implementation to finish writing before reset.", vim.log.levels.WARN)
@@ -624,9 +656,9 @@ function M.reset(src_bufnr)
   clear_input()
   vim.notify("[chatforge] Conversation reset.", vim.log.levels.INFO)
 end
- 
+
 -- ── open ───────────────────────────────────────────────────────────────────
- 
+
 function M.open(src_bufnr)
   src_bufnr = src_bufnr or vim.api.nvim_get_current_buf()
   if not state.is_plugin_buf(src_bufnr) then
@@ -740,5 +772,5 @@ function M.open(src_bufnr)
   })
   focus_input()
 end
- 
+
 return M
