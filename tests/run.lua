@@ -105,10 +105,15 @@ end)
 test("afile shorthand injects named file context", function()
   local dispatcher = require("chatforge.core.dispatcher")
   local path = vim.fn.tempname() .. " shorthand.html"
-  vim.fn.writefile({ "<main class=\"content\"></main>" }, path)
+  local write_result = vim.fn.writefile({ "<main class=\"content\"></main>" }, path)
+  truthy(write_result == 0, "writefile should succeed for " .. path .. " (got " .. tostring(write_result) .. ")")
+  truthy(vim.fn.filereadable(path) == 1, "written file should be readable at " .. path)
 
   local result = dispatcher.dispatch("review {afile " .. path .. "}", vim.api.nvim_get_current_buf())
-  truthy(result.prompt:find("<main class=\"content\"></main>", 1, true), "afile shorthand should inject file content")
+  truthy(
+    result.prompt:find("<main class=\"content\"></main>", 1, true),
+    "afile shorthand should inject file content\npath: " .. path .. "\nprompt was:\n" .. result.prompt
+  )
   equal(#result.contexts, 1)
 
   vim.fn.delete(path)
