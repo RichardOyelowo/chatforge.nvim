@@ -10,18 +10,18 @@
 --   :ChatPreview [N]       preview staged implementation N
 --   :ChatReject             discard all pending blocks
 --   :ChatBackend <cmd>      manage local backend helpers
- 
+
 local M = {}
 
 M.version = "0.3.0"
- 
+
 function M.setup(opts)
   local config  = require("chatforge.config")
   local log     = require("chatforge.utils.logger")
- 
+
   config.setup(opts)
   log.setup(config.values.debug)
- 
+
   local chat     = require("chatforge.ui.chat")
   local actions  = require("chatforge.core.actions")
   local state    = require("chatforge.core.state")
@@ -40,19 +40,19 @@ function M.setup(opts)
       state.source_winnr = vim.api.nvim_get_current_win()
     end,
   })
- 
+
   -- ── :Chat ──────────────────────────────────────────────────────────────
   vim.api.nvim_create_user_command("Chat", function()
     chat.open()
   end, { desc = "Open chatforge window" })
- 
+
   -- ── :ChatSend [message] ───────────────────────────────────────────────
   -- No args      → focuses the right-side input area
   -- With args    → sends the text directly
   -- Visual range → wraps selected lines in a code block and sends
   vim.api.nvim_create_user_command("ChatSend", function(cmd)
     local src = vim.api.nvim_get_current_buf()
- 
+
     -- Don't let src be the chat UI itself
     if state.is_plugin_buf(src) then
       src = state.source_bufnr
@@ -65,9 +65,9 @@ function M.setup(opts)
       )
       return
     end
- 
+
     local input = nil
- 
+
     if cmd.range > 0 then
       -- Visual selection: wrap in a fenced code block
       local lines = vim.api.nvim_buf_get_lines(src, cmd.line1 - 1, cmd.line2, false)
@@ -90,13 +90,13 @@ function M.setup(opts)
       state.edit_target = nil
     end
     -- input == nil  →  send_message focuses the right-side input area
- 
+
     chat.open(src)
     vim.defer_fn(function()
       chat.send_message(src, input)
     end, 80)
   end, { desc = "Send a message to chatforge", nargs = "*", range = true })
- 
+
   -- ── :ChatEdit [message] ───────────────────────────────────────────────
   vim.api.nvim_create_user_command("ChatEdit", function(cmd)
     local src = vim.api.nvim_get_current_buf()
@@ -197,7 +197,7 @@ function M.setup(opts)
   vim.api.nvim_create_user_command("ChatModel", select_model_cmd, { desc = "Set or select chatforge model for current buffer", nargs = "?" })
   vim.api.nvim_create_user_command("ChatForgeSelectModel", select_model_cmd, { desc = "Interactively select chatforge model for current buffer", nargs = "?" })
   vim.api.nvim_create_user_command("ChatForgeSetModel", select_model_cmd, { desc = "Set chatforge model for current buffer", nargs = "?" })
- 
+
   -- ── :ChatReset ────────────────────────────────────────────────────────
   vim.api.nvim_create_user_command("ChatReset", function()
     local src = vim.api.nvim_get_current_buf()
@@ -207,7 +207,7 @@ function M.setup(opts)
     chat.open(src)
     vim.defer_fn(function() chat.reset(src) end, 80)
   end, { desc = "Reset chatforge history" })
- 
+
   -- ── :ChatApply [N] ───────────────────────────────────────────────────
   local function do_apply(cmd)
     local n = tonumber(cmd.args) or 1
@@ -218,7 +218,7 @@ function M.setup(opts)
   vim.api.nvim_create_user_command("ChatAccept", function()
     actions.accept_current()
   end, { desc = "Accept the first staged implementation" })
- 
+
   -- ── :ChatDiff [N] ─────────────────────────────────────────────────────
   vim.api.nvim_create_user_command("ChatDiff", function(cmd)
     local n = tonumber(cmd.args) or 1
@@ -240,7 +240,7 @@ function M.setup(opts)
   vim.api.nvim_create_user_command("ChatPrevChange", function()
     actions.jump_prev()
   end, { desc = "Jump to the previous staged implementation line" })
- 
+
   -- ── :ChatReject ───────────────────────────────────────────────────────
   vim.api.nvim_create_user_command("ChatReject", function()
     actions.reject_all()
@@ -270,10 +270,10 @@ function M.setup(opts)
       return { "status", "start", "stop", "switch", "models" }
     end,
   })
- 
+
   log.log("chatforge ready  default_model=%s", config.values.default_model)
 end
- 
+
 function M.open() require("chatforge.ui.chat").open() end
- 
+
 return M
