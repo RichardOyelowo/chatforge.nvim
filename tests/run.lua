@@ -269,7 +269,12 @@ test("chat input uses local completion menu settings", function()
   chat.open(source)
 
   truthy(state.input_bufnr and vim.api.nvim_buf_is_valid(state.input_bufnr), "input buffer should exist")
-  equal(vim.bo[state.input_bufnr].completeopt, "menuone,noinsert,noselect")
+
+  -- completeopt has global scope in Neovim; chatforge scopes it to the
+  -- input buffer via BufEnter/BufLeave, so the value is only observable
+  -- once that buffer is actually entered.
+  vim.api.nvim_set_current_win(state.input_winnr)
+  equal(vim.o.completeopt, "menuone,noinsert,noselect")
 
   if state.chat_winnr and vim.api.nvim_win_is_valid(state.chat_winnr) then
     vim.api.nvim_win_close(state.chat_winnr, true)
