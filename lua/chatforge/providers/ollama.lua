@@ -12,7 +12,7 @@ end
 function M.stream(params, handlers)
   local config = require("chatforge.config").values
   local url = base_url(config) .. "/api/chat"
-  
+
   local body = vim.json.encode({
     model = params.model,
     messages = params.messages,
@@ -114,7 +114,7 @@ end
 function M.list_models(cb)
   local config = require("chatforge.config").values
   local url = base_url(config) .. "/api/tags"
-  
+
   vim.system({
     "curl", "--silent", url
   }, { text = true }, function(result)
