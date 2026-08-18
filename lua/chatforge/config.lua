@@ -1,5 +1,5 @@
 local M = {}
- 
+
 ---@class AiChatConfig
 ---@field default_model    string  Fallback model tag used when a provider has no `providers.<name>.model` set (e.g. "llama3", "codestral")
 ---@field default_provider string  Provider used for new buffers: "ollama" | "openai_compatible" | "anthropic" | "deepseek"
@@ -46,12 +46,12 @@ M.defaults = {
                .. "Do not claim that you cannot see that content. "
                .. "When suggesting file changes, clearly state the filename.",
 }
- 
+
 ---@type AiChatConfig
 M.values = {}
- 
+
 function M.setup(opts)
   M.values = vim.tbl_deep_extend("force", M.defaults, opts or {})
 end
- 
+
 return M
