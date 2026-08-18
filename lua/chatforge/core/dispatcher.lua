@@ -269,6 +269,29 @@ local function resolve_at_mentions(input, src_bufnr)
     return hold(block)
   end)
 
+  -- Legacy compatibility shorthand: {afile path} behaves the same as @{file path}.
+  resolved = resolved:gsub("{[aA][fF][iI][lL][eE]%s+([^}]*)}", function(raw_path)
+    local path = trim(raw_path)
+    if is_current_file_ref(path) then
+      return current_file_block("(current buffer)")
+    end
+    local contents, err = read_file(path)
+    if err then
+      return hold("\n<!-- {afile " .. path .. "} could not be read: " .. err .. " -->")
+    end
+    local ft = vim.filetype.match({ filename = path }) or ""
+    table.insert(injections, { tag = "{afile}", path = path, ok = true })
+    local block = string.format(
+      "\n\n[ChatForge context: named file %s. This is accessible user-provided code.]\nFile: %s\n```%s\n%s\n```",
+      path,
+      path,
+      ft,
+      contents
+    )
+    table.insert(contexts, { path = vim.fn.expand(path), block = block })
+    return hold(block)
+  end)
+
   resolved = resolved:gsub("@%{[dD][iI][rR]%s*([^}]*)%}", function(raw_path)
     local path = trim(raw_path)
     local listing, err = read_dir(path)
@@ -329,6 +352,7 @@ local function should_include_related_context(input)
     or lower:match("css")
     or lower:match("@file")
     or lower:match("@%{file")
+    or lower:match("{afile")
 end
 
 local function add_related_contexts(input, related_contexts, current_contexts)
