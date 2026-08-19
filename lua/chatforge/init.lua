@@ -157,14 +157,23 @@ function M.setup(opts)
 
     local prov = state.get_provider(src) or "ollama"
     local providers = require("chatforge.providers")
-    local be = providers.get(prov)
-    if not be then
-      vim.notify("[chatforge] Provider not found: " .. prov, vim.log.levels.ERROR)
+
+    -- Query every registered provider in parallel and build one combined
+    -- picker across all of them, rather than only the active buffer's
+    -- provider. Providers with no API key configured, or that are
+    -- unreachable, simply contribute nothing (list_models already
+    -- degrades to an empty list in those cases) instead of erroring.
+    local names = providers.list()
+    if #names == 0 then
+      vim.notify("[chatforge] No providers registered.", vim.log.levels.ERROR)
       return
     end
 
-    be.list_models(function(models)
-      if not models or #models == 0 then
+    local aggregated = {}
+    local remaining = #names
+
+    local function finish()
+      if #aggregated == 0 then
         dialog.input({ prompt = "Model (" .. prov .. "): ", default = state.get_model(src) }, function(model)
           if model and model ~= "" then
             state.set_model(src, model)
@@ -177,21 +186,60 @@ function M.setup(opts)
         return
       end
 
-      dialog.select(models, {
-        prompt = "Select ChatForge Model (" .. prov .. "):",
+      table.sort(aggregated, function(a, b)
+        if a.provider ~= b.provider then
+          return a.provider < b.provider
+        end
+        return a.model < b.model
+      end)
+
+      dialog.select(aggregated, {
+        prompt = "Select ChatForge Model (all providers):",
         format_item = function(item)
-          return item == state.get_model(src) and (item .. " (active)") or item
+          local label = item.provider .. "/" .. item.model
+          local is_active = item.provider == prov and item.model == state.get_model(src)
+          return is_active and (label .. " (active)") or label
         end,
       }, function(choice)
         if choice then
-          state.set_model(src, choice)
-          vim.notify("[chatforge] Model → " .. choice, vim.log.levels.INFO)
+          state.set_provider(src, choice.provider)
+          state.set_model(src, choice.model)
+          vim.notify("[chatforge] Provider → " .. choice.provider .. ", Model → " .. choice.model, vim.log.levels.INFO)
           if state.chat_is_open() then
             render.write_header(src)
           end
         end
       end)
-    end)
+    end
+
+    for _, name in ipairs(names) do
+      local be = providers.get(name)
+      local settled = false
+
+      local function settle(models)
+        if settled then return end
+        settled = true
+        for _, m in ipairs(models or {}) do
+          table.insert(aggregated, { provider = name, model = m })
+        end
+        remaining = remaining - 1
+        if remaining == 0 then
+          finish()
+        end
+      end
+
+      -- list_models has no built-in request timeout (unlike health()), so a
+      -- single slow or unreachable provider must not be able to block the
+      -- combined picker for everyone else.
+      local timer_id = vim.fn.timer_start(3000, function()
+        settle({})
+      end)
+
+      be.list_models(function(models)
+        pcall(vim.fn.timer_stop, timer_id)
+        settle(models)
+      end)
+    end
   end
 
   vim.api.nvim_create_user_command("ChatModel", select_model_cmd, { desc = "Set or select chatforge model for current buffer", nargs = "?" })
