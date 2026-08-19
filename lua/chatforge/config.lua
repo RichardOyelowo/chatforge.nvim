@@ -2,7 +2,7 @@ local M = {}
 
 ---@class AiChatConfig
 ---@field default_model    string  Fallback model tag used when a provider has no `providers.<name>.model` set (e.g. "llama3", "codestral")
----@field default_provider string  Provider used for new buffers: "ollama" | "openai_compatible" | "anthropic" | "deepseek"
+---@field default_provider string  Provider used for new buffers: "ollama" | "openai_compatible" | "anthropic" | "deepseek" | "openrouter" | "groq" | "google"
 ---@field ollama_url       string  Deprecated top-level fallback for the Ollama base URL; prefer `providers.ollama.url`
 ---@field providers        table   Per-provider config, each with at least `.model` and, where applicable, `.base_url`/`.url` and `.api_key`
 ---@field max_tokens       number  Max tokens to request
@@ -37,6 +37,18 @@ M.defaults = {
     deepseek = {
       base_url = "https://api.deepseek.com",
       model = "deepseek-chat",
+    },
+    openrouter = {
+      base_url = "https://openrouter.ai/api/v1",
+      model = "anthropic/claude-sonnet-4.6",
+    },
+    groq = {
+      base_url = "https://api.groq.com/openai/v1",
+      model = "openai/gpt-oss-120b",
+    },
+    google = {
+      base_url = "https://generativelanguage.googleapis.com/v1beta",
+      model = "gemini-2.5-flash",
     },
   },
   debug         = false,
