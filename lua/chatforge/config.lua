@@ -2,7 +2,7 @@ local M = {}
 
 ---@class AiChatConfig
 ---@field default_model    string  Fallback model tag used when a provider has no `providers.<name>.model` set (e.g. "llama3", "codestral")
----@field default_provider string  Provider used for new buffers: "ollama" | "openai_compatible" | "anthropic" | "deepseek" | "openrouter" | "groq" | "google"
+---@field default_provider string|nil Provider used for new buffers, or nil to require the person to set one explicitly: "ollama" | "openai_compatible" | "anthropic" | "deepseek" | "openrouter" | "groq" | "google"
 ---@field ollama_url       string  Deprecated top-level fallback for the Ollama base URL; prefer `providers.ollama.url`
 ---@field providers        table   Per-provider config, each with at least `.model` and, where applicable, `.base_url`/`.url` and `.api_key`
 ---@field max_tokens       number  Max tokens to request
@@ -21,7 +21,10 @@ M.defaults = {
       incoming = "ChatforgeProposedChange",
     },
   },
-  default_provider = "anthropic",
+  -- No default_provider. ChatForge does not assume any single vendor.
+  -- Set this in your setup() call, or run :ChatBackend switch <provider>
+  -- from inside Neovim.
+  default_provider = nil,
   providers = {
     ollama = {
       url = "http://localhost:11434",
