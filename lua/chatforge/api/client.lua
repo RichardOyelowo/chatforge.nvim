@@ -18,27 +18,25 @@ function M.complete(src_bufnr, messages, on_done, request_id, opts)
 
   local cfg = config.values
   local provider_name = state.get_provider(src_bufnr) or cfg.default_provider
-  if not provider_name or provider_name == "" then
-    on_done(nil, "No provider configured for the current buffer. Please specify `default_provider` in config setup().")
+
+  if not provider_name then
+    on_done(nil, "No provider configured for this buffer. Set default_provider in setup(), or run :ChatBackend switch <provider>.")
     return
   end
 
   local providers = require("chatforge.providers")
   local be = providers.get(provider_name)
+
   if not be then
-    on_done(nil, "Provider '" .. provider_name .. "' is not registered.")
+    on_done(nil, "Provider '" .. provider_name .. "' not found.")
     return
   end
 
   local model = state.get_model(src_bufnr)
-  if not model or model == "" then
-    on_done(nil, "No model configured for provider '" .. provider_name .. "'. Please configure a model in setup().")
-    return
-  end
 
   -- Prepend system prompt
   local full = {}
-  if cfg.system_prompt and cfg.system_prompt ~= "" then
+  if cfg.system_prompt ~= "" then
     table.insert(full, { role = "system", content = cfg.system_prompt })
   end
   for _, m in ipairs(messages) do table.insert(full, m) end
@@ -63,38 +61,29 @@ function M.complete(src_bufnr, messages, on_done, request_id, opts)
   }, {
     on_chunk = function(chunk)
       if opts.stream and opts.on_delta then
-        vim.schedule(function()
-          if request_id and request_id ~= state.request_id then
-            return
-          end
-          opts.on_delta(chunk)
-        end)
+        opts.on_delta(chunk)
       end
     end,
     on_done = function(text)
-      vim.schedule(function()
-        if request_id and request_id ~= state.request_id then
-          return
-        end
-        state.loading = false
-        state.active_request_cancel = nil
-        on_done(text, nil)
-      end)
+      if request_id and request_id ~= state.request_id then
+        return
+      end
+      state.loading = false
+      state.active_request_cancel = nil
+      on_done(text, nil)
     end,
     on_error = function(err)
-      vim.schedule(function()
-        if request_id and request_id ~= state.request_id then
-          return
-        end
-        state.loading = false
-        state.active_request_cancel = nil
-        if err and err:match("Ollama unreachable") then
-          backend_control.offer_ollama_start(err)
-        elseif err and (err:lower():match("model") and (err:lower():match("not found") or err:lower():match("pull"))) then
-          backend_control.offer_model_pull(model, err)
-        end
-        on_done(nil, err)
-      end)
+      if request_id and request_id ~= state.request_id then
+        return
+      end
+      state.loading = false
+      state.active_request_cancel = nil
+      if err and err:match("Ollama unreachable") then
+        backend_control.offer_ollama_start(err)
+      elseif err and (err:lower():match("model") and (err:lower():match("not found") or err:lower():match("pull"))) then
+        backend_control.offer_model_pull(model, err)
+      end
+      on_done(nil, err)
     end
   })
 
