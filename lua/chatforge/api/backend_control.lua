@@ -149,7 +149,11 @@ function M.command(arg)
     local src = state.source_bufnr or vim.api.nvim_get_current_buf()
     local prov = state.get_provider(src)
     local mod = state.get_model(src)
-    notify(string.format("Active provider: %s, Model: %s", prov, mod))
+    if not prov then
+      notify("No provider configured for this buffer. Run :ChatBackend switch <provider>.", vim.log.levels.WARN)
+      return
+    end
+    notify(string.format("Active provider: %s, Model: %s", prov, mod or "(none)"))
     if prov == "ollama" then
       notify("Ollama backend status: server=" .. M.ollama_status() .. ", pull=" .. M.pull_status())
     end
@@ -175,7 +179,7 @@ function M.command(arg)
     local providers = require("chatforge.providers")
     local be = providers.get(prov)
     if not be then
-      notify("No active provider found for buffer.", vim.log.levels.ERROR)
+      notify("No provider configured for this buffer. Run :ChatBackend switch <provider>.", vim.log.levels.ERROR)
       return
     end
     notify("Fetching models for " .. prov .. "...")
