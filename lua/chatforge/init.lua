@@ -334,3 +334,4 @@ end
 function M.open() require("chatforge.ui.chat").open() end
 
 return M
+
