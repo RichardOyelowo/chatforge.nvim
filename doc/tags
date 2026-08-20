@@ -12,6 +12,7 @@
 :ChatReset	chatforge.txt	/*:ChatReset*
 :ChatReviewDiff	chatforge.txt	/*:ChatReviewDiff*
 :ChatSend	chatforge.txt	/*:ChatSend*
+:ChatStop	chatforge.txt	/*:ChatStop*
 chatforge	chatforge.txt	/*chatforge*
 chatforge-@dir	chatforge.txt	/*chatforge-@dir*
 chatforge-@file	chatforge.txt	/*chatforge-@file*
@@ -26,6 +27,7 @@ chatforge-health	chatforge.txt	/*chatforge-health*
 chatforge-intent	chatforge.txt	/*chatforge-intent*
 chatforge-limitations	chatforge.txt	/*chatforge-limitations*
 chatforge-optional-ui	chatforge.txt	/*chatforge-optional-ui*
+chatforge-providers	chatforge.txt	/*chatforge-providers*
 chatforge-quick-start	chatforge.txt	/*chatforge-quick-start*
 chatforge-related-context	chatforge.txt	/*chatforge-related-context*
 chatforge-review	chatforge.txt	/*chatforge-review*

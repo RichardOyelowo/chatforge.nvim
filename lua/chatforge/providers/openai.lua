@@ -1,4 +1,5 @@
 local log = require("chatforge.utils.logger")
+local env = require("chatforge.utils.env")
 
 local M = {}
 
@@ -6,7 +7,7 @@ function M.stream(params, handlers)
   local config = require("chatforge.config").values
   local prov_cfg = (config.providers and config.providers.openai_compatible) or {}
   local base_url = prov_cfg.base_url or "https://api.openai.com/v1"
-  local api_key = prov_cfg.api_key or vim.fn.getenv("OPENAI_API_KEY")
+  local api_key = prov_cfg.api_key or env.get("OPENAI_API_KEY")
 
   if not api_key or api_key == "" then
     handlers.on_error("OPENAI_API_KEY environment variable is not set.")
@@ -126,7 +127,7 @@ function M.list_models(cb)
   local config = require("chatforge.config").values
   local prov_cfg = (config.providers and config.providers.openai_compatible) or {}
   local base_url = prov_cfg.base_url or "https://api.openai.com/v1"
-  local api_key = prov_cfg.api_key or vim.fn.getenv("OPENAI_API_KEY")
+  local api_key = prov_cfg.api_key or env.get("OPENAI_API_KEY")
 
   if not api_key or api_key == "" then
     vim.schedule(function() cb({}) end)
@@ -163,7 +164,7 @@ function M.health(cb)
   local config = require("chatforge.config").values
   local prov_cfg = (config.providers and config.providers.openai_compatible) or {}
   local base_url = prov_cfg.base_url or "https://api.openai.com/v1"
-  local api_key = prov_cfg.api_key or vim.fn.getenv("OPENAI_API_KEY")
+  local api_key = prov_cfg.api_key or env.get("OPENAI_API_KEY")
 
   if not api_key or api_key == "" then
     vim.schedule(function() cb(false, "OPENAI_API_KEY environment variable is not set") end)

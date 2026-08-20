@@ -1,4 +1,5 @@
 local log = require("chatforge.utils.logger")
+local env = require("chatforge.utils.env")
 
 local M = {}
 
@@ -6,7 +7,7 @@ function M.stream(params, handlers)
   local config = require("chatforge.config").values
   local prov_cfg = (config.providers and config.providers.anthropic) or {}
   local base_url = prov_cfg.base_url or "https://api.anthropic.com"
-  local api_key = prov_cfg.api_key or vim.fn.getenv("ANTHROPIC_API_KEY")
+  local api_key = prov_cfg.api_key or env.get("ANTHROPIC_API_KEY")
 
   if not api_key or api_key == "" then
     handlers.on_error("ANTHROPIC_API_KEY environment variable is not set.")
@@ -127,19 +128,47 @@ function M.stream(params, handlers)
 end
 
 function M.list_models(cb)
-  vim.schedule(function()
-    cb({
-      "claude-3-5-sonnet-20241022",
-      "claude-3-5-haiku-20241022",
-      "claude-3-opus-20240229",
-    })
+  local config = require("chatforge.config").values
+  local prov_cfg = (config.providers and config.providers.anthropic) or {}
+  local base_url = prov_cfg.base_url or "https://api.anthropic.com"
+  local api_key = prov_cfg.api_key or env.get("ANTHROPIC_API_KEY")
+
+  if not api_key or api_key == "" then
+    vim.schedule(function() cb({}) end)
+    return
+  end
+
+  local url = base_url .. "/v1/models"
+  vim.system({
+    "curl", "--silent",
+    "-H", "x-api-key: " .. api_key,
+    "-H", "anthropic-version: 2023-06-01",
+    url
+  }, { text = true }, function(result)
+    if result.code ~= 0 then
+      vim.schedule(function() cb({}) end)
+      return
+    end
+    local ok, decoded = pcall(vim.json.decode, result.stdout)
+    if not ok or type(decoded) ~= "table" or not decoded.data then
+      vim.schedule(function() cb({}) end)
+      return
+    end
+    local models = {}
+    for _, model in ipairs(decoded.data) do
+      if model.id then
+        table.insert(models, model.id)
+      end
+    end
+    table.sort(models)
+    vim.schedule(function() cb(models) end)
   end)
 end
 
 function M.health(cb)
   local config = require("chatforge.config").values
   local prov_cfg = (config.providers and config.providers.anthropic) or {}
-  local api_key = prov_cfg.api_key or vim.fn.getenv("ANTHROPIC_API_KEY")
+  local api_key = prov_cfg.api_key or env.get("ANTHROPIC_API_KEY")
 
   if not api_key or api_key == "" then
     vim.schedule(function() cb(false, "ANTHROPIC_API_KEY environment variable is not set") end)

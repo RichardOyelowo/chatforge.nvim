@@ -1,4 +1,5 @@
 local log = require("chatforge.utils.logger")
+local env = require("chatforge.utils.env")
 
 local M = {}
 
@@ -6,7 +7,7 @@ function M.stream(params, handlers)
   local config = require("chatforge.config").values
   local prov_cfg = (config.providers and config.providers.deepseek) or {}
   local base_url = prov_cfg.base_url or "https://api.deepseek.com"
-  local api_key = prov_cfg.api_key or vim.fn.getenv("DEEPSEEK_API_KEY")
+  local api_key = prov_cfg.api_key or env.get("DEEPSEEK_API_KEY")
 
   if not api_key or api_key == "" then
     handlers.on_error("DEEPSEEK_API_KEY environment variable is not set.")
@@ -111,19 +112,46 @@ function M.stream(params, handlers)
 end
 
 function M.list_models(cb)
-  vim.schedule(function()
-    cb({
-      "deepseek-chat",
-      "deepseek-coder",
-      "deepseek-reasoner",
-    })
+  local config = require("chatforge.config").values
+  local prov_cfg = (config.providers and config.providers.deepseek) or {}
+  local base_url = prov_cfg.base_url or "https://api.deepseek.com"
+  local api_key = prov_cfg.api_key or env.get("DEEPSEEK_API_KEY")
+
+  if not api_key or api_key == "" then
+    vim.schedule(function() cb({}) end)
+    return
+  end
+
+  local url = base_url .. "/models"
+  vim.system({
+    "curl", "--silent",
+    "-H", "Authorization: Bearer " .. api_key,
+    url
+  }, { text = true }, function(result)
+    if result.code ~= 0 then
+      vim.schedule(function() cb({}) end)
+      return
+    end
+    local ok, decoded = pcall(vim.json.decode, result.stdout)
+    if not ok or type(decoded) ~= "table" or not decoded.data then
+      vim.schedule(function() cb({}) end)
+      return
+    end
+    local models = {}
+    for _, model in ipairs(decoded.data) do
+      if model.id then
+        table.insert(models, model.id)
+      end
+    end
+    table.sort(models)
+    vim.schedule(function() cb(models) end)
   end)
 end
 
 function M.health(cb)
   local config = require("chatforge.config").values
   local prov_cfg = (config.providers and config.providers.deepseek) or {}
-  local api_key = prov_cfg.api_key or vim.fn.getenv("DEEPSEEK_API_KEY")
+  local api_key = prov_cfg.api_key or env.get("DEEPSEEK_API_KEY")
 
   if not api_key or api_key == "" then
     vim.schedule(function() cb(false, "DEEPSEEK_API_KEY environment variable is not set") end)

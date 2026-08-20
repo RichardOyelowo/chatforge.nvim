@@ -1,8 +1,8 @@
 -- Commands:
---   :Chat                   open / focus the chat window
+--   :Chat [message]         no args = open / focus, args = open and send, visual = send selection
 --   :ChatSend [message]     no args = focus input area, args = send, visual = send selection
 --   :ChatEdit [message]     force a live staged source-buffer edit
---   :ChatModel [model]      set model for current buffer, or open picker
+--   :ChatModel [model]      set model for current buffer, or open picker across every provider
 --   :ChatReset              clear history and reopen
 --   :ChatApply [N]          accept staged implementation N
 --   :ChatAccept             accept the first staged implementation
@@ -10,10 +10,11 @@
 --   :ChatPreview [N]       preview staged implementation N
 --   :ChatReject             discard all pending blocks
 --   :ChatBackend <cmd>      manage local backend helpers
+--   :ChatStop               cancel the active request
 
 local M = {}
 
-M.version = "0.3.0"
+M.version = "0.4.0"
 
 function M.setup(opts)
   local config  = require("chatforge.config")
@@ -42,15 +43,11 @@ function M.setup(opts)
   })
 
   -- ── :Chat ──────────────────────────────────────────────────────────────
-  vim.api.nvim_create_user_command("Chat", function()
-    chat.open()
-  end, { desc = "Open chatforge window" })
-
-  -- ── :ChatSend [message] ───────────────────────────────────────────────
-  -- No args      → focuses the right-side input area
-  -- With args    → sends the text directly
+  -- ── :Chat [message] ──────────────────────────────────────────────────
+  -- No args      → open chatforge and focus the input area
+  -- With args    → open chatforge and send the text directly
   -- Visual range → wraps selected lines in a code block and sends
-  vim.api.nvim_create_user_command("ChatSend", function(cmd)
+  local function send_or_open(cmd)
     local src = vim.api.nvim_get_current_buf()
 
     -- Don't let src be the chat UI itself
@@ -60,7 +57,7 @@ function M.setup(opts)
 
     if not src or not vim.api.nvim_buf_is_valid(src) then
       vim.notify(
-        "[chatforge] Switch to your source buffer first, then run :ChatSend.",
+        "[chatforge] Switch to your source buffer first, then run :Chat.",
         vim.log.levels.WARN
       )
       return
@@ -95,7 +92,23 @@ function M.setup(opts)
     vim.defer_fn(function()
       chat.send_message(src, input)
     end, 80)
-  end, { desc = "Send a message to chatforge", nargs = "*", range = true })
+  end
+
+  vim.api.nvim_create_user_command("Chat", send_or_open, {
+    desc = "Open chatforge, or send a message directly",
+    nargs = "*",
+    range = true,
+  })
+
+  -- ── :ChatSend [message] ───────────────────────────────────────────────
+  -- No args      → focuses the right-side input area
+  -- With args    → sends the text directly
+  -- Visual range → wraps selected lines in a code block and sends
+  vim.api.nvim_create_user_command("ChatSend", send_or_open, {
+    desc = "Send a message to chatforge",
+    nargs = "*",
+    range = true,
+  })
 
   -- ── :ChatEdit [message] ───────────────────────────────────────────────
   vim.api.nvim_create_user_command("ChatEdit", function(cmd)
@@ -334,4 +347,3 @@ end
 function M.open() require("chatforge.ui.chat").open() end
 
 return M
-

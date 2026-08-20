@@ -10,7 +10,7 @@ ChatForge keeps the coding assistant inside the editor flow:
 4. Review the diff.
 5. Accept to write it, or reject to restore the original text.
 
-Version `0.3.0` adds multi-provider support, reliable staged edits, and interactive model selection. Anthropic, OpenAI-compatible endpoints, DeepSeek, OpenRouter, Groq, Google AI Studio, and Ollama all work behind the same streaming contract, so the workflow stays the same no matter which one answers the request. Context stays explicit and edits stay reversible proposals until you accept them.
+Version `0.4.0` adds three more providers, interactive multi-provider model selection, and removes the implicit Ollama default: every buffer now needs an explicit provider, set once in `setup()` or per buffer with `:ChatBackend switch`. Anthropic, OpenAI-compatible endpoints, DeepSeek, OpenRouter, Groq, Google AI Studio, and Ollama all work behind the same streaming contract, so the workflow stays the same no matter which one answers the request. Context stays explicit and edits stay reversible proposals until you accept them.
 
 Full reference documentation ships with the plugin. Run `:help chatforge` once it's installed.
 
@@ -73,7 +73,7 @@ Both optional plugins are detected by `:checkhealth chatforge`.
 ```lua
 {
   "RichardOyelowo/chatforge.nvim",
-  version = "v0.3.0",
+  version = "v0.4.0",
   -- No external plugin dependencies. Only `curl` on $PATH is required at runtime.
   cmd = {
     "Chat",
@@ -147,7 +147,7 @@ Open a source file:
 :Chat
 ```
 
-Ask a read-only question:
+`:Chat` and `:ChatSend` behave the same way: no argument focuses the input, an argument sends directly, and a visual selection sends that range. Ask a read-only question:
 
 ```vim
 :ChatSend review @file for error-handling gaps
@@ -323,7 +323,7 @@ Injected source is protected from a second context pass. An `@{file ...}` string
 
 | Command | Behavior |
 |---|---|
-| `:Chat` | Open ChatForge for the current source buffer, or focus the existing chat input. |
+| `:Chat [message]` | Open ChatForge for the current source buffer, or focus the existing chat input. With text, open and send directly, the same as `:ChatSend`. A range sends a selected-line rewrite. |
 | `:ChatSend [message]` | Send text. With no text, focus the input or send its contents. A range sends a selected-line rewrite. |
 | `:ChatEdit <message>` | Force a live staged edit in the source buffer. A range rewrites only the selected lines. |
 | `:ChatModel [model]` | Set the model for the current source buffer. With no argument, query every registered provider in parallel and open one combined picker across all of them, labeled `provider/model`, so picking a model can also switch provider. Providers with no key configured, or that are unreachable, simply contribute nothing to the list. |

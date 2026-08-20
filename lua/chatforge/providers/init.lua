@@ -24,5 +24,8 @@ M.register("ollama", require("chatforge.providers.ollama"))
 M.register("openai_compatible", require("chatforge.providers.openai"))
 M.register("anthropic", require("chatforge.providers.anthropic"))
 M.register("deepseek", require("chatforge.providers.deepseek"))
+M.register("openrouter", require("chatforge.providers.openrouter"))
+M.register("groq", require("chatforge.providers.groq"))
+M.register("google", require("chatforge.providers.google"))
 
 return M

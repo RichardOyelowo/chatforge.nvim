@@ -28,7 +28,7 @@ stream into the live Neovim buffer as marked proposals. Accept writes a
 fresh proposal to disk. Reject restores its saved original lines in
 memory.
 
-Version 0.3.0 speaks to Anthropic, OpenAI-compatible endpoints, DeepSeek,
+Version 0.4.0 speaks to Anthropic, OpenAI-compatible endpoints, DeepSeek,
 OpenRouter, Groq, Google AI Studio, and Ollama behind the same streaming
 contract. ChatForge does not assume any one of them. Set
 |chatforge-config| default_provider, or run |:ChatBackend| switch, before
@@ -54,7 +54,7 @@ lazy.nvim example: >lua
 
   {
     "RichardOyelowo/chatforge.nvim",
-    version = "v0.3.0",
+    version = "v0.4.0",
     cmd = {
       "Chat", "ChatSend", "ChatEdit", "ChatModel", "ChatReset",
       "ChatApply", "ChatAccept", "ChatDiff", "ChatReviewDiff",
@@ -220,7 +220,7 @@ Use braces for a named directory: >vim
 <
 Named directory paths stay under |:pwd|. A leading slash is stripped,
 so `@{dir /lua}` means `<cwd>/lua`. Absolute directory paths, `~`, and
-environment variable expansion are not supported in version 0.3.0.
+environment variable expansion are not supported in version 0.4.0.
 
 Directory listings are not recursive. One read returns at most 64
 entries.
@@ -328,7 +328,7 @@ newer buffer state. Staged metadata remains available. |:ChatDiff|
 compares the saved original snapshot with the proposal. It does not
 include the newer user-edited buffer.
 
-Version 0.3.0 has no force-accept or force-reject command.
+Version 0.4.0 has no force-accept or force-reject command.
 
 ===============================================================================
 REVIEW COMMANDS                                             *chatforge-review*
@@ -381,9 +381,11 @@ NAVIGATION                                                   *:ChatNextChange*
 COMMANDS                                                  *chatforge-commands*
 
                                                                        *:Chat*
-:Chat                Open ChatForge for the current source buffer. If
+:Chat [message]      Open ChatForge for the current source buffer. If
                      already open, switch sessions when needed and
-                     focus the input.
+                     focus the input. With text, open and send
+                     directly, the same as :ChatSend. A range sends a
+                     selected-line rewrite.
 
                                                                    *:ChatSend*
 :ChatSend [message]  Send text. With no text, focus the input or send
@@ -481,7 +483,7 @@ from `providers.<name>.model`.
 CONFIGURATION                                               *chatforge-config*
 
 All fields are optional except default_provider, which has no built-in
-value. Version 0.3.0 defaults: >lua
+value. Version 0.4.0 defaults: >lua
 
   require("chatforge").setup({
     default_provider = nil,  -- set this, or run :ChatBackend switch
@@ -582,7 +584,7 @@ notifications.
 System message prepended to every request. Use an empty string to
 omit it.
 
-Unknown fields remain in the merged configuration but version 0.3.0
+Unknown fields remain in the merged configuration but version 0.4.0
 does not use them.
 
 ===============================================================================
@@ -621,7 +623,7 @@ The check reports:
   own health contract
 - render-markdown.nvim and dressing.nvim detection
 
-The state-directory check is diagnostic. Version 0.3.0 keeps
+The state-directory check is diagnostic. Version 0.4.0 keeps
 conversations in memory and does not persist them in that directory.
 
 ===============================================================================
