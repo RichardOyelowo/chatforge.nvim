@@ -10,7 +10,34 @@ ChatForge keeps the coding assistant inside the editor flow:
 4. Review the diff.
 5. Accept to write it, or reject to restore the original text.
 
-Version `0.3.0` adds multi-provider support, reliable staged edits, and interactive model selection. Anthropic, OpenAI-compatible endpoints, DeepSeek, and Ollama all work behind the same streaming contract, so the workflow stays the same no matter which one answers the request. Context stays explicit and edits stay reversible proposals until you accept them.
+Version `0.3.0` adds multi-provider support, reliable staged edits, and interactive model selection. Anthropic, OpenAI-compatible endpoints, DeepSeek, OpenRouter, Groq, Google AI Studio, and Ollama all work behind the same streaming contract, so the workflow stays the same no matter which one answers the request. Context stays explicit and edits stay reversible proposals until you accept them.
+
+Full reference documentation ships with the plugin. Run `:help chatforge` once it's installed.
+
+## Table of Contents
+
+- [Why This Project Matters](#why-this-project-matters)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Chat Interface](#chat-interface)
+- [Live Edit Workflow](#live-edit-workflow)
+- [Review Commands](#review-commands)
+- [Context](#context)
+  - [Current Buffer](#current-buffer)
+  - [Named Files](#named-files)
+  - [Directories](#directories)
+  - [Related File Context](#related-file-context)
+  - [Completion](#completion)
+- [Commands](#commands)
+- [Providers](#providers)
+- [Safety Model](#safety-model)
+- [Backend And Model Recovery](#backend-and-model-recovery)
+- [Configuration](#configuration)
+- [Health Check](#health-check)
+- [Testing](#testing)
+- [Troubleshooting](#troubleshooting)
+- [Known Limitations](#known-limitations)
 
 ## Why This Project Matters
 
@@ -21,7 +48,7 @@ The main design choices are:
 - **Live staged edits:** edit requests stream into the opened source buffer.
 - **Review before write:** `:ChatAccept` writes, `:ChatReject` restores.
 - **Per-buffer sessions:** each source buffer keeps its own provider, model, and chat history.
-- **Any provider:** Anthropic, OpenAI-compatible endpoints, DeepSeek, or Ollama, switchable per buffer with `:ChatBackend switch`.
+- **Any provider:** Anthropic, OpenAI-compatible endpoints, DeepSeek, OpenRouter, Groq, Google AI Studio, or Ollama, switchable per buffer with `:ChatBackend switch`. ChatForge does not assume any one of them, see [Providers](#providers).
 - **Explicit context:** use `@file`, `@{file path}`, `@dir`, or `@{dir path}` when the model needs code or project layout.
 - **Related file memory:** recently shared files can be reused when you ask whether files match each other, such as CSS against HTML.
 - **No surprise keymaps:** ChatForge creates commands and buffer-local input mappings only.
@@ -30,7 +57,7 @@ The main design choices are:
 
 - Neovim 0.10 or newer
 - `curl` in `$PATH`
-- A provider: an API key for Anthropic, OpenAI, or DeepSeek, or a local Ollama install
+- A provider: an API key for Anthropic, OpenAI, DeepSeek, OpenRouter, Groq, or Google AI Studio, or a local Ollama install
 
 Optional:
 
@@ -68,11 +95,16 @@ Both optional plugins are detected by `:checkhealth chatforge`.
     "ChatStop",
   },
   opts = {
+    -- default_provider has no built-in value. Pick one, or leave it unset
+    -- and run :ChatBackend switch <provider> the first time you open a buffer.
     default_provider = "anthropic",
     providers = {
       anthropic = { base_url = "https://api.anthropic.com", model = "claude-3-5-sonnet-20241022" },
       openai_compatible = { base_url = "https://api.openai.com/v1", model = "gpt-4o" },
       deepseek = { base_url = "https://api.deepseek.com", model = "deepseek-chat" },
+      openrouter = { base_url = "https://openrouter.ai/api/v1", model = "anthropic/claude-sonnet-4.6" },
+      groq = { base_url = "https://api.groq.com/openai/v1", model = "openai/gpt-oss-120b" },
+      google = { base_url = "https://generativelanguage.googleapis.com/v1beta", model = "gemini-2.5-flash" },
       ollama = { url = "http://localhost:11434" },
     },
   },
@@ -85,6 +117,9 @@ Set the API key for whichever provider you use:
 export ANTHROPIC_API_KEY=sk-ant-...
 export OPENAI_API_KEY=sk-...
 export DEEPSEEK_API_KEY=sk-...
+export OPENROUTER_API_KEY=sk-or-...
+export GROQ_API_KEY=gsk_...
+export GOOGLE_API_KEY=AI...   # GEMINI_API_KEY also works
 ```
 
 An `api_key` field under `providers.<name>` works the same way if you keep secrets out of your shell environment.
@@ -291,7 +326,7 @@ Injected source is protected from a second context pass. An `@{file ...}` string
 | `:Chat` | Open ChatForge for the current source buffer, or focus the existing chat input. |
 | `:ChatSend [message]` | Send text. With no text, focus the input or send its contents. A range sends a selected-line rewrite. |
 | `:ChatEdit <message>` | Force a live staged edit in the source buffer. A range rewrites only the selected lines. |
-| `:ChatModel [model]` | Set the model for the current source buffer. With no argument, open a picker of models available from the active provider. |
+| `:ChatModel [model]` | Set the model for the current source buffer. With no argument, query every registered provider in parallel and open one combined picker across all of them, labeled `provider/model`, so picking a model can also switch provider. Providers with no key configured, or that are unreachable, simply contribute nothing to the list. |
 | `:ChatReset` | Ignore the current request result, reject fresh staged work, clear staged metadata, clear remembered related context, and redraw the chat. |
 | `:ChatPreview [N]` | Open response block N in a float. Default: 1. |
 | `:ChatDiff [N]` | Open a diff for response block N. Default: 1. |
@@ -302,13 +337,41 @@ Injected source is protected from a second context pass. An `@{file ...}` string
 | `:ChatNextChange` | Jump to the end of the first staged block. |
 | `:ChatPrevChange` | Jump to the start of the first staged block. |
 | `:ChatStop` | Cancel the active request and stop its `curl` job. |
-| `:ChatBackend status` | Show the active provider and model for the current buffer, plus Ollama job state when the active provider is Ollama. |
-| `:ChatBackend switch <provider>` | Switch the current buffer to `ollama`, `openai_compatible`, `anthropic`, or `deepseek`, and reset the model to that provider's configured default. |
+| `:ChatBackend status` | Show the active provider and model for the current buffer, plus Ollama job state when the active provider is Ollama. Warns instead if no provider is set yet. |
+| `:ChatBackend switch <provider>` | Switch the current buffer to `ollama`, `openai_compatible`, `anthropic`, `deepseek`, `openrouter`, `groq`, or `google`, and reset the model to that provider's configured default. |
 | `:ChatBackend models` | List models available from the current buffer's active provider. |
 | `:ChatBackend start` | Show the `ollama serve` command. It does not start a server. |
 | `:ChatBackend stop` | Stop a plugin-managed Ollama server or `ollama pull` job. |
 
 `:ChatForgeSelectModel` and `:ChatForgeSetModel` are aliases for `:ChatModel`, kept for discoverability.
+
+## Providers
+
+ChatForge ships seven providers behind one streaming contract. None of them runs by default, see [Configuration](#configuration) for `default_provider`.
+
+| Name | Key | Base URL |
+|---|---|---|
+| `anthropic` | `ANTHROPIC_API_KEY` | `api.anthropic.com` |
+| `openai_compatible` | `OPENAI_API_KEY` | `api.openai.com/v1` |
+| `deepseek` | `DEEPSEEK_API_KEY` | `api.deepseek.com` |
+| `openrouter` | `OPENROUTER_API_KEY` | `openrouter.ai/api/v1` |
+| `groq` | `GROQ_API_KEY` | `api.groq.com/openai/v1` |
+| `google` | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | `generativelanguage.googleapis.com` |
+| `ollama` | none | `localhost:11434` |
+
+Every provider reads `providers.<name>.api_key` from `setup()` before its environment variable, and `providers.<name>.model` for the model a new buffer starts on when `default_provider` is that provider. Ollama has no key and reads `providers.ollama.url` instead of a `base_url`.
+
+`openai_compatible`, `openrouter`, and `groq` all speak the OpenAI chat-completions wire format, so any endpoint implementing that format can be pointed at through `openai_compatible`'s `base_url`.
+
+`google` speaks Gemini's native `generateContent` REST API rather than the OpenAI format. System prompts are sent as a separate `systemInstruction` field rather than a system-role message.
+
+Switch a buffer's provider at any time:
+
+```vim
+:ChatBackend switch groq
+```
+
+This resets the buffer's model to that provider's configured default from `providers.<name>.model`.
 
 ## Safety Model
 
@@ -326,7 +389,8 @@ There is no force-accept or force-reject command. Review the diff and resolve st
 
 Each provider reports failures through the same handler, so recovery looks different depending on what went wrong:
 
-- **Missing API key.** Anthropic, OpenAI-compatible, and DeepSeek requests fail immediately with a message naming the expected environment variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`), or the `api_key` field to set under `providers.<name>` instead.
+- **No provider configured.** Sending a message, or running `:ChatBackend status` or `models`, on a buffer with no provider set shows a message pointing at `:ChatBackend switch <provider>` instead of guessing one.
+- **Missing API key.** Anthropic, OpenAI-compatible, DeepSeek, OpenRouter, Groq, and Google AI Studio requests fail immediately with a message naming the expected environment variable, or the `api_key` field to set under `providers.<name>` instead.
 - **Ollama unreachable.** ChatForge offers to show the `ollama serve` command or ignore the error. `:ChatBackend start` also shows the command. It does not start an Ollama server.
 - **Ollama model missing.** ChatForge can run `ollama pull <model>` as a Neovim job, show the command only, or ignore the error. `:ChatBackend stop` can stop a plugin-managed pull. It cannot stop an Ollama server started outside ChatForge.
 
@@ -334,11 +398,11 @@ Each provider reports failures through the same handler, so recovery looks diffe
 
 ## Configuration
 
-All fields are optional. These are the current defaults:
+All fields are optional except `default_provider`, which has no built-in value. These are the current defaults:
 
 ```lua
 require("chatforge").setup({
-  default_provider = "anthropic",
+  default_provider = nil, -- set this, or run :ChatBackend switch
   default_model = "llama3",
   ollama_url = "http://localhost:11434",
   providers = {
@@ -356,6 +420,18 @@ require("chatforge").setup({
     deepseek = {
       base_url = "https://api.deepseek.com",
       model = "deepseek-chat",
+    },
+    openrouter = {
+      base_url = "https://openrouter.ai/api/v1",
+      model = "anthropic/claude-sonnet-4.6",
+    },
+    groq = {
+      base_url = "https://api.groq.com/openai/v1",
+      model = "openai/gpt-oss-120b",
+    },
+    google = {
+      base_url = "https://generativelanguage.googleapis.com/v1beta",
+      model = "gemini-2.5-flash",
     },
   },
   max_tokens = 4096,
@@ -378,7 +454,7 @@ require("chatforge").setup({
 
 | Field | Meaning |
 |---|---|
-| `default_provider` | Provider used for new buffers: `ollama`, `openai_compatible`, `anthropic`, or `deepseek`. |
+| `default_provider` | Provider a new buffer starts on: `ollama`, `openai_compatible`, `anthropic`, `deepseek`, `openrouter`, `groq`, or `google`. Unset by default, see [Providers](#providers). |
 | `default_model` | Fallback model used only when the active provider's own `providers.<name>.model` is unset. |
 | `providers.<name>.model` | Model tag for that provider. Read first when a new buffer picks its starting model. |
 | `providers.<name>.base_url` / `.url` | Base URL for that provider's API. Ollama uses `.url`; the others use `.base_url`. |
@@ -424,9 +500,13 @@ The suite needs Neovim 0.10 or newer. It does not need a running provider or ext
 
 ## Troubleshooting
 
+### No Provider Configured
+
+Set `default_provider` in `setup()`, or run `:ChatBackend switch <provider>` for the current buffer. See [Providers](#providers) for the list of names.
+
 ### API Key Not Set
 
-Set the environment variable named in the error (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`), or add `api_key` under `providers.<name>` in `setup()`. Then run `:checkhealth chatforge`.
+Set the environment variable named in the error (see [Providers](#providers)), or add `api_key` under `providers.<name>` in `setup()`. Then run `:checkhealth chatforge`.
 
 ### `Ollama unreachable`
 
@@ -470,6 +550,7 @@ Set `debug = true`, reproduce the problem, and inspect `:messages`.
 
 ## Known Limitations
 
+- No provider is assumed. Requests fail with a clear message until `default_provider` is set or `:ChatBackend switch` has run at least once for the buffer.
 - Chat and model state are not persisted across Neovim sessions.
 - One request can be active at a time across the plugin.
 - Reset ignores an active request's eventual result but does not stop its underlying `curl` job.
@@ -485,7 +566,6 @@ Set `debug = true`, reproduce the problem, and inspect `:messages`.
 - Named directory context stays under the current working directory and returns at most 64 entries from one level.
 - Context and completion do not apply ignore files such as `.gitignore`.
 - Completion is capped at 80 items and cached until the working directory changes.
+- `list_models` has a three-second timeout per provider inside the combined `:ChatModel` picker, so one slow or unreachable provider cannot block the others.
 - The parser recognizes triple-backtick fences only when the opening fence ends with a newline.
 - ChatForge defines no global keymaps.
-
-Full editor help is available at `:help chatforge`.
