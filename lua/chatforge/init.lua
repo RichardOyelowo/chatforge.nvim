@@ -155,7 +155,7 @@ function M.setup(opts)
       return
     end
 
-    local prov = state.get_provider(src) or "ollama"
+    local prov = state.get_provider(src)
     local providers = require("chatforge.providers")
 
     -- Query every registered provider in parallel and build one combined
@@ -174,6 +174,15 @@ function M.setup(opts)
 
     local function finish()
       if #aggregated == 0 then
+        if not prov then
+          vim.notify(
+            "[chatforge] No provider configured for this buffer and no provider returned any models. "
+              .. "Run :ChatBackend switch <provider>, where <provider> is one of: "
+              .. table.concat(names, ", ") .. ".",
+            vim.log.levels.WARN
+          )
+          return
+        end
         dialog.input({ prompt = "Model (" .. prov .. "): ", default = state.get_model(src) }, function(model)
           if model and model ~= "" then
             state.set_model(src, model)
