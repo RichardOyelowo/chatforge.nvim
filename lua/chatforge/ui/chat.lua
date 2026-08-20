@@ -685,7 +685,11 @@ function M.open(src_bufnr)
   setup_input_autocmds(state.input_bufnr)
   setup_input_keymaps(state.input_bufnr)
   setup_chat_keymaps(bufnr)
-  render.write_header()
+  -- Restore this source buffer's existing conversation, if any, instead of
+  -- always starting from a bare header. This matters whenever the chat
+  -- window itself was closed and reopened: the in-memory history for the
+  -- buffer survives that, but nothing previously repainted it on open.
+  render_history(state.source_bufnr)
   log.log("chat open buf=%d win=%d src=%d", bufnr, winnr, src_bufnr)
   local resize_group = vim.api.nvim_create_augroup("chatforge_chat_resize_" .. bufnr, { clear = true })
   vim.api.nvim_create_autocmd({ "VimResized", "WinResized" }, {

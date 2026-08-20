@@ -216,7 +216,9 @@ end
 
 local function clear_proposed_highlight(change)
   if change and change.bufnr and vim.api.nvim_buf_is_valid(change.bufnr) then
-    vim.api.nvim_buf_clear_namespace(change.bufnr, NS, 0, -1)
+    local start_idx = change.start_idx or 0
+    local end_idx = start_idx + math.max(change.new_line_count or 0, 1)
+    vim.api.nvim_buf_clear_namespace(change.bufnr, NS, start_idx, end_idx)
   end
 end
 
@@ -256,10 +258,32 @@ local function is_stale(change)
     and vim.api.nvim_buf_get_changedtick(change.bufnr) ~= change.staged_changedtick
 end
 
-local function report_stale(idx)
+-- changedtick is buffer-global, not per-block. Staging a second block into
+-- the same buffer bumps the tick that an already-staged sibling recorded,
+-- which would otherwise make that sibling look stale purely because of
+-- ChatForge's own follow-up edit rather than anything the person did.
+-- Bring every other staged block sharing this buffer up to the post-edit
+-- tick so only genuine external edits are ever reported as stale.
+local function sync_sibling_changedticks(bufnr, exclude_idx)
+  if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+    return
+  end
+  local tick = vim.api.nvim_buf_get_changedtick(bufnr)
+  for idx, change in pairs(state.staged_changes) do
+    if idx ~= exclude_idx and change.bufnr == bufnr then
+      change.staged_changedtick = tick
+    end
+  end
+end
+
+local function report_stale(idx, change)
   local message = "Implementation #" .. idx .. " is stale because the buffer changed after staging. Review it with :ChatDiff " .. idx .. "."
   render.append_status(message, "error")
   vim.notify("[chatforge] " .. message, vim.log.levels.WARN)
+  -- The highlighted range no longer reflects the real proposal once the
+  -- buffer has moved past it, so leaving it lit is actively misleading.
+  -- The staged snapshot itself is untouched; :ChatDiff still works.
+  clear_proposed_highlight(change)
 end
 
 local function first_staged_idx()
@@ -595,7 +619,7 @@ function M.apply_to_current(idx)
   local staged = state.staged_changes[idx]
   if staged then
     if is_stale(staged) then
-      report_stale(idx)
+      report_stale(idx, staged)
       return
     end
     if not write_buffer_to_disk(staged.bufnr) then
@@ -681,6 +705,7 @@ function M.stage_preview(idx)
   if patch.is_search_replace(block.content) then
     stage_patch_live(bufnr, block.content, block, { highlight = true }, function(change)
       state.staged_changes[idx] = change
+      sync_sibling_changedticks(bufnr, idx)
       render.append_status("Implementation #" .. idx .. " staged. Use :ChatAccept, :ChatReject, or :ChatDiff.")
       log.log("stage_preview_patch: block=%d bufnr=%d", idx, bufnr)
     end)
@@ -689,6 +714,7 @@ function M.stage_preview(idx)
 
   write_lines_live(bufnr, lines, target, { highlight = true, block_index = idx }, function(change)
     state.staged_changes[idx] = change
+    sync_sibling_changedticks(bufnr, idx)
     render.append_status("Implementation #" .. idx .. " staged. Use :ChatAccept, :ChatReject, or :ChatDiff.")
     log.log("stage_preview: block=%d bufnr=%d", idx, bufnr)
   end)
@@ -835,7 +861,7 @@ function M.reject_all()
   for idx, change in pairs(state.staged_changes) do
     if is_stale(change) then
       retained[idx] = change
-      report_stale(idx)
+      report_stale(idx, change)
     elseif change.bufnr and vim.api.nvim_buf_is_valid(change.bufnr) then
       local was_modifiable = vim.bo[change.bufnr].modifiable
       vim.bo[change.bufnr].modifiable = true
