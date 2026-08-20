@@ -1,48 +1,54 @@
-*chatforge.txt*  Local-first, staged coding chat for Neovim
+*chatforge.txt*  Provider-agnostic, staged coding chat for Neovim
 
-=============================================================================
-CONTENTS                                                    *chatforge-contents*
+===============================================================================
+CONTENTS                                                  *chatforge-contents*
 
-1. Introduction                                      |chatforge|
-2. Requirements and setup                            |chatforge-setup|
-3. Quick start                                       |chatforge-quick-start|
-4. Chat workflow                                     |chatforge-workflow|
-5. Context references                                |chatforge-context|
-6. Intent and automatic context                      |chatforge-intent|
-7. Staged edits                                      |chatforge-staged-edits|
-8. Review commands                                   |chatforge-review|
-9. Commands                                          |chatforge-commands|
-10. Configuration                                    |chatforge-config|
-11. Optional UI plugins                              |chatforge-optional-ui|
-12. Health check                                     |chatforge-health|
-13. Testing                                          |chatforge-testing|
-14. Troubleshooting                                  |chatforge-troubleshooting|
-15. Known limitations                                |chatforge-limitations|
+1. Introduction                                        |chatforge|
+2. Requirements and setup                              |chatforge-setup|
+3. Quick start                                         |chatforge-quick-start|
+4. Chat workflow                                       |chatforge-workflow|
+5. Context references                                  |chatforge-context|
+6. Intent and automatic context                        |chatforge-intent|
+7. Staged edits                                        |chatforge-staged-edits|
+8. Review commands                                     |chatforge-review|
+9. Commands                                            |chatforge-commands|
+10. Providers                                          |chatforge-providers|
+11. Configuration                                      |chatforge-config|
+12. Optional UI plugins                                |chatforge-optional-ui|
+13. Health check                                       |chatforge-health|
+14. Testing                                            |chatforge-testing|
+15. Troubleshooting                                    |chatforge-troubleshooting|
+16. Known limitations                                  |chatforge-limitations|
 
-=============================================================================
-INTRODUCTION                                                *chatforge*
+===============================================================================
+INTRODUCTION                                                       *chatforge*
 
 ChatForge keeps a conversation for each source buffer. Edit requests
-stream into the live Neovim buffer as marked proposals. Accept writes a fresh
-proposal to disk. Reject restores its saved original lines in memory.
+stream into the live Neovim buffer as marked proposals. Accept writes a
+fresh proposal to disk. Reject restores its saved original lines in
+memory.
 
-Version 0.3.0 supports Ollama and OpenAI-compatible backends. It handles one active request and
-one staged edit workflow at a time. Chat and model state last only for the
-current Neovim process.
+Version 0.3.0 speaks to Anthropic, OpenAI-compatible endpoints, DeepSeek,
+OpenRouter, Groq, Google AI Studio, and Ollama behind the same streaming
+contract. ChatForge does not assume any one of them. Set
+|chatforge-config| default_provider, or run |:ChatBackend| switch, before
+sending a message. It handles one active request and one staged edit
+workflow at a time. Chat and model state last only for the current
+Neovim process.
 
-Context is explicit. Use |chatforge-context| references when a request needs a
-file or directory listing. ChatForge does not scan the whole project for every
-message.
+Context is explicit. Use |chatforge-context| references when a request
+needs a file or directory listing. ChatForge does not scan the whole
+project for every message.
 
-=============================================================================
-REQUIREMENTS AND SETUP                                 *chatforge-setup*
+===============================================================================
+REQUIREMENTS AND SETUP                                       *chatforge-setup*
 
 Requirements:
 
 - Neovim 0.10 or newer
 - curl in $PATH
-- Ollama (if using local models)
-- An installed model (Ollama or OpenAI-compatible)
+- A provider: an API key for Anthropic, OpenAI, DeepSeek, OpenRouter,
+  Groq, or Google AI Studio, or a local Ollama install
 
 lazy.nvim example: >lua
 
@@ -56,32 +62,49 @@ lazy.nvim example: >lua
       "ChatBackend", "ChatStop",
     },
     opts = {
-      default_model = "llama3",
-      ollama_url = "http://localhost:11434",
+      default_provider = "anthropic",  -- required, no built-in default
+      providers = {
+        anthropic = { model = "claude-3-5-sonnet-20241022" },
+      },
     },
   }
 <
-Start Ollama and install the configured model: >sh
+default_provider has no built-in value. ChatForge will not guess a
+vendor on your behalf. Set it in setup(), or leave it unset and run
+|:ChatBackend| switch <provider> the first time you open a buffer.
+See |chatforge-providers| for every provider's environment variable and
+configuration keys.
+
+Set the API key for whichever provider you use: >sh
+
+  export ANTHROPIC_API_KEY=sk-ant-...
+  export OPENAI_API_KEY=sk-...
+  export DEEPSEEK_API_KEY=sk-...
+  export OPENROUTER_API_KEY=sk-or-...
+  export GROQ_API_KEY=gsk_...
+  export GOOGLE_API_KEY=AI...          (GEMINI_API_KEY also works)
+<
+Ollama needs no key, only a running server: >sh
 
   ollama serve
   ollama pull llama3
 <
-The commands normally run in separate terminals because `ollama serve` keeps
-running. Finish with: >vim
+Finish with: >vim
 
   :checkhealth chatforge
 <
 render-markdown.nvim and dressing.nvim are optional. See
 |chatforge-optional-ui|.
 
-=============================================================================
-QUICK START                                        *chatforge-quick-start*
+===============================================================================
+QUICK START                                            *chatforge-quick-start*
 
 Open a source file and run: >vim
 
   :Chat
 <
-Type in the bottom message pane. Press ENTER to send. CTRL-J inserts a newline.
+Type in the bottom message pane. Press ENTER to send. CTRL-J inserts a
+newline.
 
 Ask a read-only question: >vim
 
@@ -95,84 +118,89 @@ Force a live staged edit regardless of wording: >vim
 
   :ChatEdit add input validation to this file
 <
-Edit requests prefer exact SEARCH/REPLACE patch blocks. Matching ranges are
-staged in the source buffer and highlighted. Review the marked lines: >vim
+Edit requests prefer exact SEARCH/REPLACE patch blocks. Matching ranges
+are staged in the source buffer and highlighted. Review the marked
+lines: >vim
 
   :ChatDiff
   :ChatAccept
 <
 Use |:ChatReject| instead if the proposal is wrong.
 
-=============================================================================
-CHAT WORKFLOW                                        *chatforge-workflow*
+===============================================================================
+CHAT WORKFLOW                                             *chatforge-workflow*
 
-|:Chat| opens a 65-column vertical split on the right. The chat is above an
-eight-line message pane. Both temporary buffers have `filetype=markdown` and
-`buftype=nofile`.
+|:Chat| opens a 65-column vertical split on the right. The chat is above
+an eight-line message pane. Both temporary buffers have
+`filetype=markdown` and `buftype=nofile`.
 
-The source buffer that opens ChatForge owns the conversation and model choice.
-Open ChatForge from another source buffer to switch sessions.
+The source buffer that opens ChatForge owns the conversation, provider,
+and model choice. Open ChatForge from another source buffer to switch
+sessions.
 
 Messages can be sent in four ways:
 
-1. Run `:ChatSend some text`. Edit-shaped text stages live in the source
-   buffer.
+1. Run `:ChatSend some text`. Edit-shaped text stages live in the
+   source buffer.
 2. Run |:ChatEdit| with text to force a live staged source-buffer edit.
-3. Run |:ChatSend| without text to focus the message pane. Run it again while
-   that pane has focus to send its contents.
-4. Select source lines and run `:'<,'>ChatSend`. ChatForge requests replacement
-   code and stages it back into that exact range.
+3. Run |:ChatSend| without text to focus the message pane. Run it again
+   while that pane has focus to send its contents.
+4. Select source lines and run `:'<,'>ChatSend`. ChatForge requests
+   replacement code and stages it back into that exact range.
 
 Message-pane mappings:
 
   ENTER     Send. When completion is visible, accept its item first.
   CTRL-J    Insert a newline.
 
-Completion uses buffer-local menu settings. ChatForge does not change the
-user's global completion UI.
+Completion uses buffer-local menu settings. ChatForge does not change
+the user's global completion UI.
 
-Normal-mode editing keys in the read-only chat pane redirect to the input.
-ChatForge defines no global mappings.
+Normal-mode editing keys in the read-only chat pane redirect to the
+input. ChatForge defines no global mappings.
 
-Edit-shaped requests stage code. ChatForge treats prompts that ask to add,
-change, update, remove, rewrite, generate, implement, create, improve, or make
-code as live edit requests. Plain review and explanation prompts keep fenced
-blocks as examples in the chat pane. Accept or reject an existing staged
-proposal before sending another message.
+Edit-shaped requests stage code. ChatForge treats prompts that ask to
+add, change, update, remove, rewrite, generate, implement, create,
+improve, or make code as live edit requests. Plain review and
+explanation prompts keep fenced blocks as examples in the chat pane.
+Accept or reject an existing staged proposal before sending another
+message.
 
-=============================================================================
-CONTEXT REFERENCES                                     *chatforge-context*
+===============================================================================
+CONTEXT REFERENCES                                         *chatforge-context*
 
-References are case-insensitive. Tokens inside injected source are not parsed
-again. This prevents source text from pulling in an unexpected second file.
+References are case-insensitive. Tokens inside injected source are not
+parsed again. This prevents source text from pulling in an unexpected
+second file.
 
 BARE FILE                                                    *chatforge-@file*
 
-`@file` injects the current live Neovim buffer. Unsaved edits are included.
-Nearby prose is not consumed as a path: >vim
+`@file` injects the current live Neovim buffer. Unsaved edits are
+included. Nearby prose is not consumed as a path: >vim
 
   :ChatSend can you review @file fully?
 <
 `fully?` remains part of the question.
 
-NAMED FILE                                              *chatforge-@{file}*
+NAMED FILE                                                 *chatforge-@{file}*
 
 Use braces for a named file: >vim
 
   :ChatSend compare @{file lua/old.lua} with @{file lua/new.lua}
   :ChatSend review @{file docs/design notes.md}
 <
-Named files are read from disk. Relative paths use |:pwd|. Absolute paths,
-`~`, and environment variables use `vim.fn.expand()`.
+Named files are read from disk. Relative paths use |:pwd|. Absolute
+paths, `~`, and environment variables use `vim.fn.expand()`.
 
-ChatForge also accepts `{afile path}` as a compatibility shorthand for named
-file context.
+ChatForge also accepts `{afile path}` as a compatibility shorthand for
+named file context.
 
-`@{file .}`, `@{file /}`, and an empty file reference mean the current live
-buffer. `/` does not mean the filesystem root in this special form.
+`@{file .}`, `@{file /}`, and an empty file reference mean the current
+live buffer. `/` does not mean the filesystem root in this special
+form.
 
-An unreadable file adds an HTML context error to the model prompt. The request
-still runs.
+An unreadable file adds an HTML context error to the model prompt. The
+request still runs.
 
 BARE DIRECTORY                                                *chatforge-@dir*
 
@@ -180,123 +208,135 @@ BARE DIRECTORY                                                *chatforge-@dir*
 
   :ChatSend use @dir to explain the project layout
 <
-Entries are marked `d` for directory or `f` for every other entry type.
+Entries are marked `d` for directory or `f` for every other entry
+type.
 
-NAMED DIRECTORY                                          *chatforge-@{dir}*
+NAMED DIRECTORY                                             *chatforge-@{dir}*
 
 Use braces for a named directory: >vim
 
   :ChatSend inspect @{dir lua/chatforge}
   :ChatSend inspect @{dir source files}
 <
-Named directory paths stay under |:pwd|. A leading slash is stripped, so
-`@{dir /lua}` means `<cwd>/lua`. Absolute directory paths, `~`, and environment
-variable expansion are not supported in version 0.3.0.
+Named directory paths stay under |:pwd|. A leading slash is stripped,
+so `@{dir /lua}` means `<cwd>/lua`. Absolute directory paths, `~`, and
+environment variable expansion are not supported in version 0.3.0.
 
-Directory listings are not recursive. One read returns at most 64 entries.
+Directory listings are not recursive. One read returns at most 64
+entries.
 
-COMPLETION                                          *chatforge-context-complete*
+COMPLETION                                        *chatforge-context-complete*
 
-Typing an `@` reference in the message pane opens completion. ChatForge scans
-|:pwd| recursively and offers at most 80 items. Bare `@file` and `@dir` come
-first. Directories come before files. Paths under `.git` are skipped.
+Typing an `@` reference in the message pane opens completion. ChatForge
+scans |:pwd| recursively and offers at most 80 items. Bare `@file` and
+`@dir` come first. Directories come before files. Paths under `.git`
+are skipped.
 
-The list is cached for the current working directory. New paths may not appear
-until the working directory changes or Neovim restarts. Manual references still
-work.
+The list is cached for the current working directory. New paths may
+not appear until the working directory changes or Neovim restarts.
+Manual references still work.
 
-RELATED FILE CONTEXT                              *chatforge-related-context*
+RELATED FILE CONTEXT                               *chatforge-related-context*
 
 When a message shares file context with `@file`, `@{file path}`, or
-`{afile path}`, ChatForge remembers the most recent files in the current Neovim
-session. Later prompts that clearly ask about file relationships, such as
-whether CSS matches HTML, include those recent files as related context.
-|:ChatReset| clears this remembered context.
+`{afile path}`, ChatForge remembers the most recent files in the
+current Neovim session. Later prompts that clearly ask about file
+relationships, such as whether CSS matches HTML, include those recent
+files as related context. |:ChatReset| clears this remembered context.
 
-=============================================================================
-INTENT AND AUTOMATIC CONTEXT                           *chatforge-intent*
+===============================================================================
+INTENT AND AUTOMATIC CONTEXT                                *chatforge-intent*
 
-ChatForge classifies the start of a message. Matching is case-insensitive.
+ChatForge classifies the start of a message. Matching is
+case-insensitive.
 
   Wording                   Behavior
-  ---------------------------------------------------------------------------
+  ---------------------------------------------------------------------
   explain                   Add current-buffer context. Do not stage.
-  review, how, what, why    Chat/review mode. Do not stage unless :ChatEdit
-                            is used.
+  review, how, what, why    Chat/review mode. Do not stage unless
+                            :ChatEdit is used.
   fix                       Add current-buffer context. Stage an edit.
   refactor                  Add current-buffer context. Stage an edit.
   add, change, update,
   remove, rewrite,
   generate, implement,
   create, improve, make     Add current-buffer context. Stage an edit.
-  edit file <path>          Add current source context. Stage into <path>.
-  create file <path>        Stage into <path>. Add no automatic context.
+  edit file <path>          Add current source context. Stage into
+                            <path>.
+  create file <path>        Stage into <path>. Add no automatic
+                            context.
   delete file <path>        Classify only. Do not delete or stage.
   :ChatEdit <prompt>        Force a live staged edit.
-  anything else             Normal chat, unless sent from a visual selection.
+  anything else             Normal chat, unless sent from a visual
+                            selection.
 
-Automatic current-buffer context has a 160-line cap. Larger buffers send a
-160-line window around the visible cursor. Bare `@file` sends the full live
-buffer and bypasses this cap.
+Automatic current-buffer context has a 160-line cap. Larger buffers
+send a 160-line window around the visible cursor. Bare `@file` sends
+the full live buffer and bypasses this cap.
 
-An `edit file` or `create file` target ends at whitespace. Target paths cannot
-contain spaces. `@{file path}` adds context only. It does not set a staging
-target.
+An `edit file` or `create file` target ends at whitespace. Target
+paths cannot contain spaces. `@{file path}` adds context only. It does
+not set a staging target.
 
-=============================================================================
-STAGED EDITS                                       *chatforge-staged-edits*
+===============================================================================
+STAGED EDITS                                          *chatforge-staged-edits*
 
 Staging changes a Neovim buffer in memory. It does not write to disk.
 
-Edit-shaped prompts and |:ChatEdit| prefer exact SEARCH/REPLACE patch blocks.
-ChatForge matches the SEARCH text against the current buffer, replaces only that
-range, and highlights the proposed lines. `create file` and raw-code fallbacks
-still use fenced code blocks. ChatForge does not add text markers into the
-source buffer.
+Edit-shaped prompts and |:ChatEdit| prefer exact SEARCH/REPLACE patch
+blocks. ChatForge matches the SEARCH text against the current buffer,
+replaces only that range, and highlights the proposed lines.
+`create file` and raw-code fallbacks still use fenced code blocks.
+ChatForge does not add text markers into the source buffer.
 
 Targets:
 
-- Edit-shaped prompts without a selected range use SEARCH/REPLACE patches when
-  available. Small raw-code fallbacks insert at the source cursor. Whole-file
-  fallbacks replace the buffer only when they match the open file shape.
+- Edit-shaped prompts without a selected range use SEARCH/REPLACE
+  patches when available. Small raw-code fallbacks insert at the
+  source cursor. Whole-file fallbacks replace the buffer only when
+  they match the open file shape.
 - A visual selection replaces only its original line range.
-- `create file <path>` opens or creates that path in the source window, then
-  stages the generated block there.
+- `create file <path>` opens or creates that path in the source
+  window, then stages the generated block there.
 
-The buffer becomes modified during staging. Autosave, |:write|, or another
-plugin can write the proposal before acceptance. ChatForge does not block those
-writes.
+The buffer becomes modified during staging. Autosave, |:write|, or
+another plugin can write the proposal before acceptance. ChatForge
+does not block those writes.
 
 ACCEPT
 
-|:ChatAccept| and |:ChatApply| compare the current buffer `changedtick` with the
-value recorded after staging. A fresh proposal is written with `:write`. Its
-marks and staged metadata are then cleared. Unnamed and special buffers are not
-written, but their staged state is cleared.
+|:ChatAccept| and |:ChatApply| compare the current buffer `changedtick`
+with the value recorded after staging. A fresh proposal is written
+with `:write`. Its marks and staged metadata are then cleared. Unnamed
+and special buffers are not written, but their staged state is
+cleared.
 
 REJECT
 
-|:ChatReject| performs the same `changedtick` check. A fresh proposal is
-replaced with the saved original lines. The restoration is not written to disk.
+|:ChatReject| performs the same `changedtick` check. A fresh proposal
+is replaced with the saved original lines. The restoration is not
+written to disk.
 
-STALE PROTECTION                                    *chatforge-stale*
+STALE PROTECTION                                             *chatforge-stale*
 
-Any buffer change after staging makes the proposal stale. Manual edits,
-formatters, undo, reload, and plugin edits can all change `changedtick`.
+Any buffer change after staging makes the proposal stale. Manual
+edits, formatters, undo, reload, and plugin edits can all change
+`changedtick`.
 
-Accept and Reject stop for a stale proposal. They do not overwrite the newer
-buffer state. Staged metadata remains available. |:ChatDiff| compares the saved
-original snapshot with the proposal. It does not include the newer user-edited
-buffer.
+Accept and Reject stop for a stale proposal. They do not overwrite the
+newer buffer state. Staged metadata remains available. |:ChatDiff|
+compares the saved original snapshot with the proposal. It does not
+include the newer user-edited buffer.
 
 Version 0.3.0 has no force-accept or force-reject command.
 
-=============================================================================
-REVIEW COMMANDS                                         *chatforge-review*
+===============================================================================
+REVIEW COMMANDS                                             *chatforge-review*
 
-PREVIEW                                                     *:ChatPreview*
+PREVIEW                                                         *:ChatPreview*
 
-:ChatPreview [N]     Open response block N in a centered float. Default: 1.
+:ChatPreview [N]     Open response block N in a centered float.
+                     Default: 1.
 
 Preview does not compare text. Buffer-local keys:
 
@@ -304,89 +344,178 @@ Preview does not compare text. Buffer-local keys:
   a                   Close and accept the first staged block.
   r                   Close and reject all fresh staged blocks.
 
-The chat output prints the exact command for each response block, such as
-`:ChatPreview 2` and `:ChatDiff 2`, so the user can preview or review the right
-block without guessing its number.
+The chat output prints the exact command for each response block,
+such as `:ChatPreview 2` and `:ChatDiff 2`, so the user can preview or
+review the right block without guessing its number.
 
-DIFF                                                           *:ChatDiff*
+DIFF                                                               *:ChatDiff*
 
 :ChatDiff [N]        Open a new diff tab for block N. Default: 1.
 
-For a staged block, Diff compares the saved original snapshot with the proposal.
-For an unstaged block, it compares the current target buffer with the response
-block. Close the tab with `:tabclose`.
+For a staged block, Diff compares the saved original snapshot with
+the proposal. For an unstaged block, it compares the current target
+buffer with the response block. Close the tab with `:tabclose`.
 
-                                                        *:ChatReviewDiff*
-:ChatReviewDiff      Diff the lowest-numbered staged block.
+:ChatReviewDiff      Diff the lowest-numbered staged block.  *:ChatReviewDiff*
 
-ACCEPT                                                       *:ChatAccept*
+ACCEPT                                                           *:ChatAccept*
 
-:ChatAccept          Accept and write the lowest-numbered staged block.
+:ChatAccept          Accept and write the lowest-numbered staged
+                     block.
 
-                                                         *:ChatApply*
-:ChatApply [N]       Accept and write staged block N. Default: 1.
+:ChatApply [N]       Accept and write staged block N. Default: 1. *:ChatApply*
 
-REJECT                                                       *:ChatReject*
+REJECT                                                           *:ChatReject*
 
-:ChatReject          Restore original lines for every fresh staged block.
-                     Stale blocks remain pending.
+:ChatReject          Restore original lines for every fresh staged
+                     block. Stale blocks remain pending.
 
-NAVIGATION                                               *:ChatNextChange*
-                                                         *:ChatPrevChange*
+NAVIGATION                                                   *:ChatNextChange*
+                                                             *:ChatPrevChange*
 
 :ChatPrevChange      Jump to the first line of the first staged block.
-:ChatNextChange      Jump to the last proposed line of the first staged block.
+:ChatNextChange      Jump to the last proposed line of the first
+                     staged block.
 
-=============================================================================
-COMMANDS                                               *chatforge-commands*
+===============================================================================
+COMMANDS                                                  *chatforge-commands*
 
-                                                               *:Chat*
-:Chat                Open ChatForge for the current source buffer. If already
-                     open, switch sessions when needed and focus the input.
+                                                                       *:Chat*
+:Chat                Open ChatForge for the current source buffer. If
+                     already open, switch sessions when needed and
+                     focus the input.
 
-                                                           *:ChatSend*
-:ChatSend [message]  Send text. With no text, focus the input or send its
-                     current contents. A range sends a selected-line rewrite.
+                                                                   *:ChatSend*
+:ChatSend [message]  Send text. With no text, focus the input or send
+                     its current contents. A range sends a
+                     selected-line rewrite.
 
-                                                          *:ChatEdit*
-:ChatEdit <message>  Force a live staged edit in the source buffer. A range
-                     rewrites only the selected lines.
+                                                                   *:ChatEdit*
+:ChatEdit <message>  Force a live staged edit in the source buffer. A
+                     range rewrites only the selected lines.
 
-                                                          *:ChatModel*
-:ChatModel [model]   Set this source buffer's model. Without an argument, use
-                     `vim.ui.input`.
+                                                                  *:ChatModel*
+:ChatModel [model]   Set this source buffer's model. Without an
+                     argument, query every registered provider in
+                     parallel and open one combined picker across all
+                     of them, labeled `provider/model`. Choosing an
+                     entry sets both the buffer's provider and model.
+                     Providers with no key configured, or that are
+                     unreachable, simply contribute nothing to the
+                     list. `:ChatForgeSelectModel` and
+                     `:ChatForgeSetModel` are aliases, kept for
+                     discoverability.
 
-                                                          *:ChatReset*
-:ChatReset           Ignore the current request result, reject fresh staged
-                     work, clear all staged metadata and this buffer's history,
-                     then redraw the chat.
+                                                                  *:ChatReset*
+:ChatReset           Ignore the current request result, reject fresh
+                     staged work, clear all staged metadata and this
+                     buffer's remembered related context, then redraw
+                     the chat.
 
-                                                          *:ChatStop*
-:ChatStop            Stop the active request and cancel the underlying curl job.
+                                                                   *:ChatStop*
+:ChatStop            Stop the active request and cancel the
+                     underlying curl job.
 
 Commands for review are documented at |chatforge-review|.
 
-                                                        *:ChatBackend*
+                                                                *:ChatBackend*
 :ChatBackend         Same as `:ChatBackend status`.
-:ChatBackend status  Show active provider and model, and Ollama job state.
-:ChatBackend start   Show `ollama serve`. It does not start a server.
+:ChatBackend status  Show the active provider and model for this
+                     buffer, plus Ollama job state when the active
+                     provider is Ollama. Warns instead if no provider
+                     is set yet.
+:ChatBackend start   Show `ollama serve`. It does not start a
+                     server.
 :ChatBackend stop    Stop a plugin-managed model pull or server job.
-:ChatBackend switch  Switch active provider and model for the current buffer.
-:ChatBackend models  List available models for the current provider.
+:ChatBackend switch  Switch this buffer's active provider and reset
+  <provider>         its model to that provider's configured
+                     default. <provider> is one of the names in
+                     |chatforge-providers|.
+:ChatBackend models  List available models for this buffer's active
+                     provider.
 
-When Ollama is unreachable, ChatForge can show `ollama serve` or ignore the
-error. When a model is missing, it can run `ollama pull <model>` as a Neovim
-job, show that command, or ignore the error. `:ChatBackend stop` can stop a
-plugin-managed pull. It cannot stop a server started in another terminal.
+When Ollama is unreachable, ChatForge can show `ollama serve` or
+ignore the error. When a model is missing, it can run
+`ollama pull <model>` as a Neovim job, show that command, or ignore
+the error. `:ChatBackend stop` can stop a plugin-managed pull. It
+cannot stop a server started in another terminal.
 
-=============================================================================
-CONFIGURATION                                           *chatforge-config*
+===============================================================================
+PROVIDERS                                                *chatforge-providers*
 
-All fields are optional. Version 0.3.0 defaults: >lua
+ChatForge ships seven providers behind one streaming contract. None is
+used unless you set default_provider or run |:ChatBackend| switch.
+
+  Name               Key                 Base URL
+  -----------------------------------------------------------------------
+  anthropic          ANTHROPIC_API_KEY   api.anthropic.com
+  openai_compatible  OPENAI_API_KEY      api.openai.com/v1
+  deepseek           DEEPSEEK_API_KEY    api.deepseek.com
+  openrouter         OPENROUTER_API_KEY  openrouter.ai/api/v1
+  groq               GROQ_API_KEY        api.groq.com/openai/v1
+  google             GOOGLE_API_KEY or   generativelanguage.googleapis.com
+                     GEMINI_API_KEY
+  ollama             (none)              localhost:11434
+
+Every provider reads `providers.<name>.api_key` from setup() before
+its environment variable, and `providers.<name>.model` for the model
+a new buffer starts on when default_provider is that provider. Ollama
+has no key and reads `providers.ollama.url` instead of a base_url.
+
+openai_compatible, openrouter, and groq all speak the OpenAI
+chat-completions wire format, so any endpoint implementing that
+format can be pointed at through openai_compatible's base_url.
+
+google speaks Gemini's native `generateContent` REST API rather than
+the OpenAI format. System prompts are sent as a separate
+systemInstruction field rather than a system-role message.
+
+Switch a buffer's provider at any time: >vim
+
+  :ChatBackend switch groq
+<
+This resets the buffer's model to that provider's configured default
+from `providers.<name>.model`.
+
+===============================================================================
+CONFIGURATION                                               *chatforge-config*
+
+All fields are optional except default_provider, which has no built-in
+value. Version 0.3.0 defaults: >lua
 
   require("chatforge").setup({
+    default_provider = nil,  -- set this, or run :ChatBackend switch
     default_model = "llama3",
     ollama_url = "http://localhost:11434",
+    providers = {
+      ollama = {
+        url = "http://localhost:11434",
+      },
+      openai_compatible = {
+        base_url = "https://api.openai.com/v1",
+        model = "gpt-4o",
+      },
+      anthropic = {
+        base_url = "https://api.anthropic.com",
+        model = "claude-3-5-sonnet-20241022",
+      },
+      deepseek = {
+        base_url = "https://api.deepseek.com",
+        model = "deepseek-chat",
+      },
+      openrouter = {
+        base_url = "https://openrouter.ai/api/v1",
+        model = "anthropic/claude-sonnet-4.6",
+      },
+      groq = {
+        base_url = "https://api.groq.com/openai/v1",
+        model = "openai/gpt-oss-120b",
+      },
+      google = {
+        base_url = "https://generativelanguage.googleapis.com/v1beta",
+        model = "gemini-2.5-flash",
+      },
+    },
     max_tokens = 4096,
     max_output_tokens = 2048,
     context_tokens = 64000,
@@ -402,57 +531,81 @@ All fields are optional. Version 0.3.0 defaults: >lua
       .. "When suggesting file changes, clearly state the filename.",
   })
 <
+`default_provider` ~
+Provider a new buffer starts on: one of the names in
+|chatforge-providers|. Unset by default. ChatForge does not assume
+Ollama or any other vendor. Sending a message, or running
+`:ChatBackend status` or `models`, on a buffer with no provider set
+shows a message pointing at `:ChatBackend switch` instead of guessing.
+
 `default_model` ~
-Initial Ollama model for each new source-buffer session.
+Fallback model used only when the active provider's own
+`providers.<name>.model` is unset.
+
+`providers.<name>.model` ~
+Model tag for that provider. Read first when a new buffer picks its
+starting model.
+
+`providers.<name>.base_url` / `.url` ~
+Base URL for that provider's API. Ollama uses `.url`; the others use
+`.base_url`.
+
+`providers.<name>.api_key` ~
+API key for that provider, checked before the matching environment
+variable.
 
 `ollama_url` ~
-Base URL for `/api/chat` and the health check's `/api/tags` request.
+Fallback base URL used only if `providers.ollama.url` is unset.
 
 `max_output_tokens` ~
-Ollama `num_predict`. It takes precedence over `max_tokens`.
+Requested output token limit. Takes precedence over `max_tokens`.
 
 `max_tokens` ~
-Legacy fallback for `num_predict` when `max_output_tokens` is absent. The
-default `max_output_tokens` normally makes this field inactive.
+Legacy fallback for `max_output_tokens` when it is absent.
 
 `context_tokens` ~
-Ollama `num_ctx`. This is separate from the 160-line automatic context cap.
+Context window size passed to Ollama as `num_ctx`. Separate from the
+160-line automatic context cap.
 
 `temperature` ~
-Ollama sampling temperature.
+Sampling temperature.
 
 `highlights.diff.incoming` ~
-Highlight group for proposed lines. The built-in `ChatforgeProposedChange`
-group uses an underline by default.
+Highlight group for proposed lines. The built-in
+`ChatforgeProposedChange` group uses an underline by default.
 
 `debug` ~
-Show `[chatforge]` dispatch, request, parser, and backend notifications.
+Show `[chatforge]` dispatch, request, parser, and backend
+notifications.
 
 `system_prompt` ~
-System message prepended to every request. Use an empty string to omit it.
+System message prepended to every request. Use an empty string to
+omit it.
 
-Unknown fields remain in the merged configuration but version 0.3.0 does not
-use them.
+Unknown fields remain in the merged configuration but version 0.3.0
+does not use them.
 
-=============================================================================
-OPTIONAL UI PLUGINS                                 *chatforge-optional-ui*
+===============================================================================
+OPTIONAL UI PLUGINS                                    *chatforge-optional-ui*
 
 render-markdown.nvim ~
-The chat and input buffers use the Markdown filetype. An installed and enabled
-render-markdown.nvim can render those buffers through its normal filetype
-handling. ChatForge does not call its API or configure it.
+The chat and input buffers use the Markdown filetype. An installed
+and enabled render-markdown.nvim can render those buffers through its
+normal filetype handling. ChatForge does not call its API or
+configure it.
 
 dressing.nvim ~
-ChatForge loads dressing.nvim for |:ChatModel| and backend recovery prompts
-when it is available. Native `vim.ui.input` and `vim.ui.select` remain the
-fallback when dressing.nvim is not installed. dressing.nvim does not change the
-chat split, message pane, preview, or diff layout.
+ChatForge loads dressing.nvim for |:ChatModel| and backend recovery
+prompts when it is available. Native `vim.ui.input` and
+`vim.ui.select` remain the fallback when dressing.nvim is not
+installed. dressing.nvim does not change the chat split, message
+pane, preview, or diff layout.
 
-Both dependencies are optional. |:checkhealth| reports whether they are on
-`runtimepath`.
+Both dependencies are optional. |:checkhealth| reports whether they
+are on `runtimepath`.
 
-=============================================================================
-HEALTH CHECK                                           *chatforge-health*
+===============================================================================
+HEALTH CHECK                                                *chatforge-health*
 
 Run: >vim
 
@@ -464,85 +617,112 @@ The check reports:
 - curl availability
 - whether `setup()` ran, otherwise defaults are checked
 - whether `stdpath("state")` exists and is writable
-- Ollama `/api/tags` reachability with a two-second timeout
-- default model presence in the returned model list
+- reachability for every registered provider, using each provider's
+  own health contract
 - render-markdown.nvim and dressing.nvim detection
 
-The state-directory check is diagnostic. Version 0.3.0 keeps conversations in
-memory and does not persist them in that directory.
+The state-directory check is diagnostic. Version 0.3.0 keeps
+conversations in memory and does not persist them in that directory.
 
-=============================================================================
-TESTING                                               *chatforge-testing*
+===============================================================================
+TESTING                                                    *chatforge-testing*
 
 Run from the repository root: >sh
 
   nvim --headless -n -i NONE -u tests/minimal_init.lua -l tests/run.lua
 <
-The suite needs Neovim 0.10 or newer. Ollama and external Lua test libraries
-are not required. GitHub Actions runs the same command on pushes to `main` and
-on pull requests.
+The suite needs Neovim 0.10 or newer. It does not need a running
+provider or external Lua test libraries. GitHub Actions runs the same
+command on pushes to `main` and on pull requests.
 
-=============================================================================
-TROUBLESHOOTING                               *chatforge-troubleshooting*
+===============================================================================
+TROUBLESHOOTING                                    *chatforge-troubleshooting*
+
+No provider configured ~
+Set `default_provider` in setup(), or run
+`:ChatBackend switch <provider>` for the current buffer. See
+|chatforge-providers| for the list of names.
+
+API key not set ~
+Set the environment variable named in the error (see
+|chatforge-providers|), or add `api_key` under `providers.<name>` in
+setup(). Then run `:checkhealth chatforge`.
 
 `Ollama unreachable` ~
-Run `ollama serve` in a terminal. Check `ollama_url`, then run
-`:checkhealth chatforge`. |:ChatBackend| start only shows the command.
+Run `ollama serve` in a terminal. Check `providers.ollama.url` (or
+the legacy `ollama_url`), then run `:checkhealth chatforge`.
+|:ChatBackend| start only shows the command.
 
 Model not found ~
-Run `ollama pull <model>`. The recovery prompt can start this pull as a Neovim
-job. Stop that job with `:ChatBackend stop`.
+For Ollama, run `ollama pull <model>`. The recovery prompt can start
+this pull as a Neovim job. Stop that job with `:ChatBackend stop`.
+For an API provider, check that the model name matches one your
+account has access to. `:ChatBackend models` lists what the provider
+reports.
 
 A proposal will not Accept or Reject ~
-The target buffer changed after staging. Run `:ChatDiff N`, then resolve the
-buffer manually. There is no force action. See |chatforge-stale|.
+The target buffer changed after staging. Run `:ChatDiff N`, then
+resolve the buffer manually. There is no force action. See
+|chatforge-stale|.
 
 `That block is an example, not a staged implementation` ~
-The request was normal chat, or a non-streamed full-file response looked too
-short to replace the source. Start with `fix` or `refactor`, use
-`edit file <path>`, or send a visual selection.
+The request was normal chat, or a non-streamed full-file response
+looked too short to replace the source. Start with `fix` or
+`refactor`, use `edit file <path>`, or send a visual selection.
 
 `Implementation #N is not staged` ~
-Only stageable blocks can be accepted. ChatForge stages the first eligible
-block. Later blocks may remain previewable without being staged.
+Only stageable blocks can be accepted. ChatForge stages the first
+eligible block. Later blocks may remain previewable without being
+staged.
 
 Context points at the wrong path ~
-Run |:pwd|. Bare `@dir`, named file paths, named directory paths, and completion
-use Neovim's current working directory. Bare `@file` uses the live source
-buffer.
+Run |:pwd|. Bare `@dir`, named file paths, named directory paths, and
+completion use Neovim's current working directory. Bare `@file` uses
+the live source buffer.
 
 Completion is missing a new path ~
-The list is cached by working directory and capped at 80 items. Type the
-reference manually, change directories, or restart Neovim.
+The list is cached by working directory and capped at 80 items. Type
+the reference manually, change directories, or restart Neovim.
 
 Request debugging ~
 Set `debug = true`, reproduce the problem, and inspect |:messages|.
 
-=============================================================================
-KNOWN LIMITATIONS                                    *chatforge-limitations*
+===============================================================================
+KNOWN LIMITATIONS                                      *chatforge-limitations*
 
-- Ollama is the only backend.
+- No provider is assumed. Requests fail with a clear message until
+  default_provider is set or :ChatBackend switch has run at least
+  once for the buffer.
 - Chat and model state are not persisted.
 - One request can be active at a time across the plugin.
-- Reset ignores an active result but does not stop its underlying curl job.
+- Reset ignores an active result but does not stop its underlying
+  curl job.
 - Existing staged work blocks the next message.
-- Edit requests prefer exact SEARCH/REPLACE patch blocks. Raw code blocks remain
-  a fallback.
-- Inferred raw-code edit fallbacks insert small proposed blocks at the cursor.
-  Whole-file model responses that match the open buffer replace the buffer and
-  highlight only changed lines. Use SEARCH/REPLACE or a visual selection for
-  precise replacement of a known range.
+- Edit requests prefer exact SEARCH/REPLACE patch blocks. Raw code
+  blocks remain a fallback.
+- Inferred raw-code edit fallbacks insert small proposed blocks at
+  the cursor. Whole-file model responses that match the open buffer
+  replace the buffer and highlight only changed lines. Use
+  SEARCH/REPLACE or a visual selection for precise replacement of a
+  known range.
 - Multi-file patches are not applied as one transaction.
 - `delete file` does not delete files.
-- Staging changes the live buffer. External writes can save a proposal early.
-- Reject restores memory only. It does not write the restoration to disk.
+- Staging changes the live buffer. External writes can save a
+  proposal early.
+- Reject restores memory only. It does not write the restoration to
+  disk.
 - Stale proposals have no force action. Diff omits newer user edits.
 - Named staging target paths cannot contain spaces.
-- Named directory context is project-relative, one level deep, and capped at
-  64 entries.
-- Context and completion do not read ignore files such as `.gitignore`.
+- Named directory context is project-relative, one level deep, and
+  capped at 64 entries.
+- Context and completion do not read ignore files such as
+  `.gitignore`.
 - Completion is capped at 80 items and cached by working directory.
-- The parser needs an opening triple-backtick fence followed by a newline.
+- list_models has a three-second timeout per provider inside the
+  combined :ChatModel picker, so one slow or unreachable provider
+  cannot block the others.
+- The parser needs an opening triple-backtick fence followed by a
+  newline.
 - ChatForge defines no global mappings.
 
 vim:tw=78:ts=8:noet:ft=help:norl:
