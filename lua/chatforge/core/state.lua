@@ -34,9 +34,12 @@ M.ollama_pull_job_stopping = false
 M.active_request_cancel = nil
 
 local config
+--- Provider a new buffer starts on. Returns nil if the person has not set
+--- default_provider in setup(), so ChatForge never silently guesses a vendor.
+---@return string|nil
 local function default_provider()
   config = config or require("chatforge.config")
-  return config.values.default_provider or "ollama"
+  return config.values.default_provider
 end
 
 --- Resolve the default model for a given provider.
@@ -45,9 +48,12 @@ end
 --- (mainly meaningful for the "ollama" provider, since that is the only
 --- provider whose model tag isn't already namespaced under `providers.<name>.model`).
 --- "llama3" is only used as a last-resort fallback when nothing else is configured.
----@param provider_name string
----@return string
+---@param provider_name string|nil
+---@return string|nil
 function M.default_model_for(provider_name)
+  if not provider_name then
+    return nil
+  end
   config = config or require("chatforge.config")
   local prov_cfg = config.values.providers and config.values.providers[provider_name]
   if prov_cfg and prov_cfg.model and prov_cfg.model ~= "" then
