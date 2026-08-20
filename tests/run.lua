@@ -675,6 +675,80 @@ test("reject refuses to overwrite edits made after staging", function()
   truthy(state.staged_changes[1], "stale proposal should remain available for review")
 end)
 
+test("staging a second block in the same buffer does not stale the first", function()
+  local state = reset_state()
+  local actions = require("chatforge.core.actions")
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+    "local a = 1",
+    "local b = 2",
+    "local c = 3",
+  })
+  state.source_bufnr = bufnr
+  state.pending_blocks = {
+    {
+      content = "local a = 100",
+      lang = "lua",
+      target = { bufnr = bufnr, line1 = 1, line2 = 1, kind = "selection" },
+      target_bufnr = bufnr,
+      stageable = true,
+    },
+    {
+      content = "local c = 300",
+      lang = "lua",
+      target = { bufnr = bufnr, line1 = 3, line2 = 3, kind = "selection" },
+      target_bufnr = bufnr,
+      stageable = true,
+    },
+  }
+
+  -- Two blocks from the same response, staged one after another into the
+  -- same buffer, the way a single multi-block reply auto-stages as it
+  -- streams in. changedtick is buffer-global, so staging #2 must not make
+  -- the untouched #1 look like the person edited the buffer.
+  actions.stage_preview(1)
+  actions.stage_preview(2)
+
+  truthy(state.staged_changes[1], "block 1 should still be staged")
+  truthy(state.staged_changes[2], "block 2 should still be staged")
+
+  actions.apply_to_current(1)
+  equal(vim.api.nvim_buf_get_lines(bufnr, 0, 1, false), { "local a = 100" },
+    "block 1 should accept cleanly instead of being reported stale")
+  truthy(not state.staged_changes[1], "accepted block 1 should be cleared from staged_changes")
+  truthy(state.staged_changes[2], "block 2 should remain staged and untouched")
+end)
+
+test("reopening the chat window restores the buffer's existing history", function()
+  local state = reset_state()
+  local chat = require("chatforge.ui.chat")
+  local source = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_set_current_buf(source)
+
+  chat.open(source)
+  state.get_buf(source).history = {
+    { role = "user", content = "first question" },
+    { role = "assistant", content = "first answer" },
+  }
+
+  -- Close the chat window the way a person actually would, not just
+  -- clearing in-memory state.
+  if state.chat_winnr and vim.api.nvim_win_is_valid(state.chat_winnr) then
+    vim.api.nvim_win_close(state.chat_winnr, true)
+  end
+  truthy(not state.chat_is_open(), "chat window should actually be closed")
+
+  vim.api.nvim_set_current_buf(source)
+  chat.open(source)
+
+  local rendered = table.concat(
+    vim.tbl_map(function(e) return e.content or "" end, state.chat_entries or {}),
+    "\n"
+  )
+  truthy(rendered:find("first question", 1, true), "reopened chat should show the earlier user message")
+  truthy(rendered:find("first answer", 1, true), "reopened chat should show the earlier assistant reply")
+end)
+
 if #failures > 0 then
   print(string.format("\n%d passed, %d failed", passed, #failures))
   for _, failure in ipairs(failures) do
