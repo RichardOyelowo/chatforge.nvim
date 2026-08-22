@@ -227,10 +227,21 @@ entries.
 
 COMPLETION                                        *chatforge-context-complete*
 
-Typing an `@` reference in the message pane opens completion. ChatForge
-scans |:pwd| recursively and offers at most 80 items. Bare `@file` and
-`@dir` come first. Directories come before files. Paths under `.git`
-are skipped.
+Typing an `@` reference in the message pane opens completion in a small
+floating popup, not Neovim's native completion menu. The native menu
+positions itself below or above the cursor with no way to influence
+placement, and has little room to work with in the eight-line message
+pane. This popup opens to the right of the cursor and is clamped so it
+never renders off-screen in any direction.
+
+  <Down>, <C-n>        Move the selection down.
+  <Up>, <C-p>          Move the selection up.
+  <CR>                 Accept the selected item.
+  <Esc>                Dismiss the popup.
+
+ChatForge scans |:pwd| recursively and offers at most 80 items. Bare
+`@file` and `@dir` come first. Directories come before files. Paths
+under `.git` are skipped.
 
 The list is cached for the current working directory. New paths may
 not appear until the working directory changes or Neovim restarts.

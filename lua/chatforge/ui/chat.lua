@@ -10,6 +10,178 @@ local log        = require("chatforge.utils.logger")
 
 local INPUT_HEIGHT = 8
 
+-- ── @-completion popup ───────────────────────────────────────────────────
+-- Neovim's native completion menu (vim.fn.complete()) positions itself
+-- below or above the cursor with no way to force it to a side, and in
+-- the 8-line input pane it routinely has nowhere to go but over the
+-- text being typed. A small custom floating window gives full control
+-- over placement: anchored to the right of the cursor, and clamped so
+-- it can never render off-screen.
+
+local COMPLETION_MIN_WIDTH = 20
+local COMPLETION_MAX_WIDTH = 42
+local COMPLETION_MAX_HEIGHT = 10
+
+--- Pure placement math, deliberately free of any Neovim window/buffer
+--- calls so it can be tested against arbitrary screen sizes and cursor
+--- positions without a real UI attached.
+---@param cursor_screen_row integer 1-indexed screen row of the cursor
+---@param cursor_screen_col integer 1-indexed screen col of the cursor
+---@param editor_columns integer `vim.o.columns`
+---@param editor_lines integer usable editor rows (excludes cmdline/statusline)
+---@param num_items integer how many completion items will be shown
+---@param longest_item_width integer width of the widest item's text
+---@return { row: integer, col: integer, width: integer, height: integer }
+local function compute_completion_geometry(cursor_screen_row, cursor_screen_col, editor_columns, editor_lines, num_items, longest_item_width)
+  local width = math.min(math.max(longest_item_width + 2, COMPLETION_MIN_WIDTH), COMPLETION_MAX_WIDTH)
+  width = math.min(width, math.max(editor_columns - 1, 1))
+  local height = math.min(math.max(num_items, 1), COMPLETION_MAX_HEIGHT)
+  height = math.min(height, math.max(editor_lines, 1))
+
+  -- Prefer opening one column to the right of the cursor. Only pull it
+  -- back to the left if the full width would otherwise run off the
+  -- right edge of the screen.
+  local col = cursor_screen_col
+  if col + width > editor_columns then
+    col = math.max(editor_columns - width, 0)
+  end
+
+  -- nvim_open_win's row/col are 0-indexed against the editor grid.
+  local row = cursor_screen_row - 1
+  if row + height > editor_lines then
+    row = math.max(editor_lines - height, 0)
+  end
+  if row < 0 then
+    row = 0
+  end
+
+  return { row = row, col = col, width = width, height = height }
+end
+
+local completion_win = nil
+local completion_buf = nil
+local completion_shown_items = nil
+local completion_selected = 1
+local completion_start_col = nil
+
+local function completion_is_open()
+  return completion_win ~= nil and vim.api.nvim_win_is_valid(completion_win)
+end
+
+local function close_completion_popup()
+  if completion_win and vim.api.nvim_win_is_valid(completion_win) then
+    pcall(vim.api.nvim_win_close, completion_win, true)
+  end
+  if completion_buf and vim.api.nvim_buf_is_valid(completion_buf) then
+    pcall(vim.api.nvim_buf_delete, completion_buf, { force = true })
+  end
+  completion_win = nil
+  completion_buf = nil
+  completion_shown_items = nil
+  completion_selected = 1
+  completion_start_col = nil
+end
+
+local function render_completion_selection()
+  if not completion_is_open() then
+    return
+  end
+  vim.api.nvim_buf_clear_namespace(completion_buf, -1, 0, -1)
+  vim.api.nvim_buf_add_highlight(completion_buf, -1, "PmenuSel", completion_selected - 1, 0, -1)
+  pcall(vim.api.nvim_win_set_cursor, completion_win, { completion_selected, 0 })
+end
+
+local function open_or_update_completion_popup(items, start_col)
+  completion_shown_items = items
+  completion_start_col = start_col
+  completion_selected = 1
+
+  local lines = {}
+  local longest = 0
+  for _, item in ipairs(items) do
+    local label = item.word .. (item.menu and ("  " .. item.menu) or "")
+    table.insert(lines, label)
+    longest = math.max(longest, #label)
+  end
+
+  if not completion_buf or not vim.api.nvim_buf_is_valid(completion_buf) then
+    completion_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[completion_buf].buftype = "nofile"
+  end
+  vim.bo[completion_buf].modifiable = true
+  vim.api.nvim_buf_set_lines(completion_buf, 0, -1, false, lines)
+  vim.bo[completion_buf].modifiable = false
+
+  local cursor_screen_pos = vim.fn.screenpos(state.input_winnr, vim.fn.line("."), vim.fn.col("."))
+  local geometry = compute_completion_geometry(
+    cursor_screen_pos.row,
+    cursor_screen_pos.col + 1,
+    vim.o.columns,
+    vim.o.lines - vim.o.cmdheight,
+    #items,
+    longest
+  )
+
+  if completion_is_open() then
+    vim.api.nvim_win_set_config(completion_win, {
+      relative = "editor",
+      row = geometry.row,
+      col = geometry.col,
+      width = geometry.width,
+      height = geometry.height,
+    })
+  else
+    completion_win = vim.api.nvim_open_win(completion_buf, false, {
+      relative = "editor",
+      row = geometry.row,
+      col = geometry.col,
+      width = geometry.width,
+      height = geometry.height,
+      style = "minimal",
+      border = "single",
+      focusable = false,
+      noautocmd = true,
+    })
+    vim.wo[completion_win].winhighlight = "Normal:Pmenu,FloatBorder:Pmenu"
+  end
+
+  render_completion_selection()
+end
+
+local function completion_move_selection(delta)
+  if not completion_is_open() or not completion_shown_items then
+    return
+  end
+  local count = #completion_shown_items
+  completion_selected = ((completion_selected - 1 + delta) % count) + 1
+  render_completion_selection()
+end
+
+--- Replace the in-progress @-reference with the selected item's text and
+--- close the popup. Returns true if something was accepted.
+local function completion_accept_selection()
+  if not completion_is_open() or not completion_shown_items or not completion_start_col then
+    return false
+  end
+  local item = completion_shown_items[completion_selected]
+  if not item then
+    close_completion_popup()
+    return false
+  end
+
+  local line = vim.api.nvim_get_current_line()
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  local row, col = cursor[1], cursor[2]
+  local before = line:sub(1, completion_start_col - 1)
+  local after = line:sub(col + 1)
+  local new_line = before .. item.word .. after
+  vim.api.nvim_set_current_line(new_line)
+  vim.api.nvim_win_set_cursor(0, { row, completion_start_col - 1 + #item.word })
+
+  close_completion_popup()
+  return true
+end
+
 -- ── buffer / window ────────────────────────────────────────────────────────
 
 local function create_chat_buf()
@@ -185,7 +357,6 @@ end
 local function trigger_at_completion()
   vim.schedule(function()
     if not state.input_is_open() then return end
-    if vim.fn.pumvisible() == 1 then return end
     if not input_cursor_ok() then
       return
     end
@@ -193,7 +364,10 @@ local function trigger_at_completion()
     local actual_col = vim.fn.col(".") - 1
     local col = math.max(actual_col, 0)
     local prefix = completion_prefix(line, col)
-    if not prefix then return end
+    if not prefix then
+      close_completion_popup()
+      return
+    end
     local start_col = col - #prefix + 1
     local filtered = {}
     local lower_prefix = prefix:lower()
@@ -203,7 +377,9 @@ local function trigger_at_completion()
       end
     end
     if #filtered > 0 then
-      vim.fn.complete(start_col, filtered)
+      open_or_update_completion_popup(filtered, start_col)
+    else
+      close_completion_popup()
     end
   end)
 end
@@ -220,8 +396,14 @@ local function setup_input_autocmds(bufnr)
       local col = math.max(vim.fn.col(".") - 1, 0)
       if completion_prefix(line, col) then
         trigger_at_completion()
+      else
+        close_completion_popup()
       end
     end,
+  })
+  vim.api.nvim_create_autocmd("InsertLeave", {
+    buffer = bufnr,
+    callback = close_completion_popup,
   })
 end
 
@@ -294,7 +476,7 @@ local function render_history(src_bufnr)
   local b = state.chat_bufnr
   if not b or not vim.api.nvim_buf_is_valid(b) then return end
 
-  render.write_header()
+  render.write_header(src_bufnr)
 
   local model = state.get_model(src_bufnr)
   for _, msg in ipairs(state.get_buf(src_bufnr).history) do
@@ -304,6 +486,21 @@ local function render_history(src_bufnr)
       render.append_assistant_text(msg.display or msg.content)
     end
   end
+end
+
+M.render_history = render_history
+
+-- Test-only accessors. Deliberately narrow and read-only so tests can
+-- verify the completion popup's behavior without the rest of the
+-- codebase reaching into chat.lua's module-private state.
+M._compute_completion_geometry = compute_completion_geometry
+function M._completion_debug()
+  return {
+    open = completion_is_open(),
+    items = completion_shown_items,
+    selected = completion_selected,
+    win = completion_win,
+  }
 end
 
 local function read_input_lines()
@@ -596,13 +793,67 @@ local function setup_input_keymaps(bufnr)
     focus_input()
   end, opts)
   vim.keymap.set("i", "<CR>", function()
+    if completion_is_open() then
+      completion_accept_selection()
+      return
+    end
     if vim.fn.pumvisible() == 1 then
-      local keys = vim.api.nvim_replace_termcodes("<C-y>", true, false, true)
+      -- Defensive fallback only, ChatForge's own completion no longer
+      -- goes through vim.fn.complete(). completeopt includes "noselect",
+      -- so nothing is highlighted until explicitly navigated; <C-y>
+      -- alone would confirm nothing and just close the menu.
+      local info = vim.fn.complete_info({ "selected" })
+      local keys
+      if info.selected == -1 then
+        keys = vim.api.nvim_replace_termcodes("<C-n><C-y>", true, false, true)
+      else
+        keys = vim.api.nvim_replace_termcodes("<C-y>", true, false, true)
+      end
       vim.api.nvim_feedkeys(keys, "n", false)
       return
     end
     vim.cmd("stopinsert")
     send_from_input()
+  end, opts)
+  vim.keymap.set("i", "<C-n>", function()
+    if completion_is_open() then
+      completion_move_selection(1)
+      return
+    end
+    local keys = vim.api.nvim_replace_termcodes("<C-n>", true, false, true)
+    vim.api.nvim_feedkeys(keys, "n", false)
+  end, opts)
+  vim.keymap.set("i", "<Down>", function()
+    if completion_is_open() then
+      completion_move_selection(1)
+      return
+    end
+    local keys = vim.api.nvim_replace_termcodes("<Down>", true, false, true)
+    vim.api.nvim_feedkeys(keys, "n", false)
+  end, opts)
+  vim.keymap.set("i", "<C-p>", function()
+    if completion_is_open() then
+      completion_move_selection(-1)
+      return
+    end
+    local keys = vim.api.nvim_replace_termcodes("<C-p>", true, false, true)
+    vim.api.nvim_feedkeys(keys, "n", false)
+  end, opts)
+  vim.keymap.set("i", "<Up>", function()
+    if completion_is_open() then
+      completion_move_selection(-1)
+      return
+    end
+    local keys = vim.api.nvim_replace_termcodes("<Up>", true, false, true)
+    vim.api.nvim_feedkeys(keys, "n", false)
+  end, opts)
+  vim.keymap.set("i", "<Esc>", function()
+    if completion_is_open() then
+      close_completion_popup()
+      return
+    end
+    local keys = vim.api.nvim_replace_termcodes("<Esc>", true, false, true)
+    vim.api.nvim_feedkeys(keys, "n", false)
   end, opts)
   vim.keymap.set("i", "<C-j>", function()
     if not input_cursor_ok() then
@@ -708,7 +959,7 @@ function M.open(src_bufnr)
       local winid = tonumber(vim.fn.expand("<amatch>"))
       if winid == state.chat_winnr then
         vim.schedule(function()
-          if state.chat_is_open() then
+          if state.chat_is_open() and not state.suppress_scroll_clamp then
             render.clamp_scroll()
           end
         end)
@@ -720,7 +971,7 @@ function M.open(src_bufnr)
     buffer = bufnr,
     callback = function()
       vim.schedule(function()
-        if state.chat_is_open() then
+        if state.chat_is_open() and not state.suppress_scroll_clamp then
           render.clamp_scroll()
         end
       end)
@@ -731,6 +982,7 @@ function M.open(src_bufnr)
     once = true,
     callback = function()
       pcall(vim.api.nvim_del_augroup_by_id, resize_group)
+      close_completion_popup()
       state.chat_winnr = nil
       state.chat_bufnr = nil
       state.input_winnr = nil
@@ -745,6 +997,7 @@ function M.open(src_bufnr)
     pattern  = tostring(winnr),
     once     = true,
     callback = function()
+      close_completion_popup()
       if state.input_winnr and vim.api.nvim_win_is_valid(state.input_winnr) then
         pcall(vim.api.nvim_win_close, state.input_winnr, true)
       end
@@ -769,6 +1022,7 @@ function M.open(src_bufnr)
     pattern = tostring(input_winnr),
     once = true,
     callback = function()
+      close_completion_popup()
       if state.chat_winnr and vim.api.nvim_win_is_valid(state.chat_winnr) then
         pcall(vim.api.nvim_win_close, state.chat_winnr, true)
       end
