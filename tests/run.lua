@@ -35,6 +35,17 @@ end
 
 local function reset_state()
   local state = require("chatforge.core.state")
+  -- reset_state() only ever cleared Lua-side references. It never wiped
+  -- the actual Neovim buffers a previous test's chat.open() created, so
+  -- a leftover "chatforge://chat" or "chatforge://input" buffer could
+  -- collide with the next test's attempt to create a buffer with that
+  -- same name. Wipe any such leftovers before each test starts.
+  for _, name in ipairs({ "chatforge://chat", "chatforge://input" }) do
+    local existing = vim.fn.bufnr(name)
+    if existing ~= -1 and vim.api.nvim_buf_is_valid(existing) then
+      pcall(vim.api.nvim_buf_delete, existing, { force = true })
+    end
+  end
   state.buffers = {}
   state.chat_bufnr = nil
   state.chat_winnr = nil
@@ -717,6 +728,228 @@ test("staging a second block in the same buffer does not stale the first", funct
     "block 1 should accept cleanly instead of being reported stale")
   truthy(not state.staged_changes[1], "accepted block 1 should be cleared from staged_changes")
   truthy(state.staged_changes[2], "block 2 should remain staged and untouched")
+end)
+
+test("scrolling up during a streaming response does not get yanked back down", function()
+  local state = reset_state()
+  local render = require("chatforge.ui.render")
+  local chat = require("chatforge.ui.chat")
+  local source = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_set_current_buf(source)
+
+  chat.open(source)
+  for i = 1, 60 do
+    render.append_status("padding line " .. i)
+  end
+
+  -- A response starts streaming. This legitimately scrolls to the
+  -- bottom once, the same as any new chat entry appearing would.
+  render.start_forging_status()
+
+  -- The person scrolls up mid-response to reread something further up.
+  vim.api.nvim_set_current_win(state.chat_winnr)
+  vim.api.nvim_win_call(state.chat_winnr, function()
+    vim.cmd("normal! gg")
+    vim.cmd("normal! \4")
+  end)
+  local before = vim.api.nvim_win_call(state.chat_winnr, vim.fn.winsaveview)
+  truthy(before.topline > 1, "the scroll-up itself should have moved off the top")
+
+  -- The forging animation keeps ticking every 120ms in the background.
+  vim.wait(500, function() return false end, 50)
+
+  local after = vim.api.nvim_win_call(state.chat_winnr, vim.fn.winsaveview)
+  equal(after.topline, before.topline,
+    "continued response ticks should not pull the view back down while the person is reading elsewhere")
+
+  render.stop_forging_status()
+end)
+
+test("closing the chat window closes the completion popup instead of leaking it", function()
+  local state = reset_state()
+  local chat = require("chatforge.ui.chat")
+  local source = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_set_current_buf(source)
+  chat.open(source)
+
+  vim.api.nvim_set_current_win(state.input_winnr)
+  vim.api.nvim_buf_set_lines(state.input_bufnr, 0, -1, false, { "@fi" })
+  vim.api.nvim_win_set_cursor(state.input_winnr, { 1, 3 })
+  vim.cmd("startinsert!")
+  vim.api.nvim_exec_autocmds("TextChangedI", { buffer = state.input_bufnr })
+  vim.wait(300, function() return chat._completion_debug().open end, 20)
+  truthy(chat._completion_debug().open, "popup should be open before closing the chat window")
+
+  local wins_before = #vim.api.nvim_list_wins()
+  vim.api.nvim_win_close(state.chat_winnr, true)
+
+  truthy(not chat._completion_debug().open, "closing the chat window should close the completion popup too")
+  equal(#vim.api.nvim_list_wins(), wins_before - 3,
+    "closing chat should close its own window, the input window, and the popup, leaving nothing extra")
+end)
+
+test("completion popup geometry always stays on screen", function()
+  local chat = require("chatforge.ui.chat")
+  local geo = chat._compute_completion_geometry
+
+  local normal = geo(10, 10, 120, 40, 5, 15)
+  equal(normal.col, 10, "should open immediately to the right of the cursor when there is room")
+  truthy(normal.col + normal.width <= 120, "normal case should fit within screen width")
+  truthy(normal.row + normal.height <= 40, "normal case should fit within screen height")
+
+  local right_edge = geo(10, 115, 120, 40, 5, 30)
+  truthy(right_edge.col + right_edge.width <= 120, "must not overflow the right edge")
+  truthy(right_edge.col >= 0, "must not push off the left edge while clamping")
+
+  local bottom_edge = geo(38, 10, 120, 40, 8, 15)
+  truthy(bottom_edge.row + bottom_edge.height <= 40, "must not overflow the bottom edge")
+  truthy(bottom_edge.row >= 0)
+
+  local corner = geo(39, 119, 120, 40, 10, 40)
+  truthy(corner.col + corner.width <= 120, "corner case must clamp width")
+  truthy(corner.row + corner.height <= 40, "corner case must clamp height")
+  truthy(corner.col >= 0 and corner.row >= 0)
+
+  local tiny_screen = geo(1, 1, 25, 8, 20, 60)
+  truthy(tiny_screen.width <= 25, "width must never exceed the screen width")
+  truthy(tiny_screen.height <= 8, "height must never exceed the screen height")
+end)
+
+test("completion popup opens, filters, and Enter accepts the selected item", function()
+  local state = reset_state()
+  local chat = require("chatforge.ui.chat")
+  local source = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_set_current_buf(source)
+  chat.open(source)
+
+  vim.api.nvim_set_current_win(state.input_winnr)
+  vim.api.nvim_buf_set_lines(state.input_bufnr, 0, -1, false, { "@fi" })
+  vim.api.nvim_win_set_cursor(state.input_winnr, { 1, 3 })
+  vim.cmd("startinsert!")
+  vim.api.nvim_exec_autocmds("TextChangedI", { buffer = state.input_bufnr })
+  vim.wait(300, function() return chat._completion_debug().open end, 20)
+
+  local debug = chat._completion_debug()
+  truthy(debug.open, "typing an @-prefix should open the completion popup")
+  truthy(debug.items and #debug.items > 0, "@fi should filter to at least the bare @file item")
+
+  local mapping = vim.fn.maparg("<CR>", "i", false, true)
+  truthy(mapping.callback, "input buffer should have a Lua <CR> callback")
+  mapping.callback()
+
+  local line = vim.api.nvim_get_current_line()
+  truthy(line:find("@file", 1, true), "accepting should insert the selected item's text")
+  truthy(not chat._completion_debug().open, "accepting should close the popup")
+end)
+
+test("completion popup Down/Up move selection and Esc dismisses it", function()
+  local state = reset_state()
+  local chat = require("chatforge.ui.chat")
+  local dir = vim.fn.tempname()
+  vim.fn.mkdir(dir, "p")
+  vim.fn.writefile({ "x" }, dir .. "/alpha.lua")
+  vim.fn.writefile({ "x" }, dir .. "/beta.lua")
+  local prev_cwd = vim.fn.getcwd()
+  vim.cmd("cd " .. vim.fn.fnameescape(dir))
+
+  local source = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_set_current_buf(source)
+  chat.open(source)
+
+  vim.api.nvim_set_current_win(state.input_winnr)
+  vim.api.nvim_buf_set_lines(state.input_bufnr, 0, -1, false, { "@" })
+  vim.api.nvim_win_set_cursor(state.input_winnr, { 1, 1 })
+  vim.cmd("startinsert!")
+  vim.api.nvim_exec_autocmds("TextChangedI", { buffer = state.input_bufnr })
+  vim.wait(300, function() return chat._completion_debug().open end, 20)
+
+  local before = chat._completion_debug()
+  truthy(before.items and #before.items >= 3, "bare @ should offer multiple items to navigate")
+  equal(before.selected, 1, "the first item should be selected by default")
+
+  local down = vim.fn.maparg("<Down>", "i", false, true)
+  down.callback()
+  down.callback()
+  equal(chat._completion_debug().selected, 3, "two <Down> presses should move selection down by two")
+
+  local up = vim.fn.maparg("<Up>", "i", false, true)
+  up.callback()
+  equal(chat._completion_debug().selected, 2, "<Up> should move selection back up by one")
+
+  local esc = vim.fn.maparg("<Esc>", "i", false, true)
+  esc.callback()
+  truthy(not chat._completion_debug().open, "<Esc> should dismiss the popup")
+
+  vim.cmd("cd " .. vim.fn.fnameescape(prev_cwd))
+end)
+
+test("insert-mode <CR> selects and confirms the first completion when nothing is selected", function()
+  local state = reset_state()
+  require("chatforge").setup({})
+  local chat = require("chatforge.ui.chat")
+  local source = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_set_current_buf(source)
+  chat.open(source)
+  vim.api.nvim_set_current_win(state.input_winnr)
+  vim.cmd("startinsert")
+
+  local mapping = vim.fn.maparg("<CR>", "i", false, true)
+  truthy(mapping.callback, "input buffer should have a Lua <CR> callback in insert mode")
+
+  local sent_keys = {}
+  local real_feedkeys = vim.api.nvim_feedkeys
+  vim.api.nvim_feedkeys = function(keys, mode, escape)
+    table.insert(sent_keys, keys)
+  end
+  local real_pumvisible = vim.fn.pumvisible
+  local real_complete_info = vim.fn.complete_info
+
+  -- completeopt includes "noselect", so nothing is highlighted until the
+  -- person explicitly navigates. <CR> still needs to accept the first
+  -- match in that state instead of silently closing the menu.
+  vim.fn.pumvisible = function() return 1 end
+  vim.fn.complete_info = function() return { selected = -1 } end
+  mapping.callback()
+  local ctrl_n = vim.api.nvim_replace_termcodes("<C-n>", true, false, true)
+  local ctrl_y = vim.api.nvim_replace_termcodes("<C-y>", true, false, true)
+  equal(sent_keys[1], ctrl_n .. ctrl_y, "nothing selected should select-then-confirm the first item")
+
+  -- If the person already navigated to a specific item, <CR> must not
+  -- also send <C-n> first, or it would skip past their actual choice.
+  sent_keys = {}
+  vim.fn.complete_info = function() return { selected = 0 } end
+  mapping.callback()
+  equal(sent_keys[1], ctrl_y, "an already-selected item should only be confirmed, not skipped past")
+
+  vim.api.nvim_feedkeys = real_feedkeys
+  vim.fn.pumvisible = real_pumvisible
+  vim.fn.complete_info = real_complete_info
+end)
+
+test("changing model with :ChatModel preserves the visible chat history", function()
+  local state = reset_state()
+  require("chatforge").setup({})
+  local chat = require("chatforge.ui.chat")
+  local source = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_set_current_buf(source)
+
+  chat.open(source)
+  state.get_buf(source).history = {
+    { role = "user", content = "what does this function do" },
+    { role = "assistant", content = "it computes the running total" },
+  }
+  chat.render_history(source)
+
+  vim.cmd("ChatModel llama3.1")
+
+  local rendered = table.concat(
+    vim.tbl_map(function(e) return e.content or "" end, state.chat_entries or {}),
+    "\n"
+  )
+  truthy(rendered:find("what does this function do", 1, true),
+    "changing the model should not wipe the visible user message")
+  truthy(rendered:find("it computes the running total", 1, true),
+    "changing the model should not wipe the visible assistant reply")
 end)
 
 test("reopening the chat window restores the buffer's existing history", function()
