@@ -128,50 +128,13 @@ local function render_entries()
 end
 
 local function redraw()
-  local b = chat_buf()
-  -- Replacing the whole buffer's lines resets the view of any window
-  -- showing it, even when nothing about this particular redraw is meant
-  -- to move the scroll position (e.g. the "forging" status animation
-  -- ticks every 120ms while a response streams in). Save and restore
-  -- every such window's view around the replace so an in-progress
-  -- response can't repeatedly yank the person back to the bottom while
-  -- they're reading something further up.
-  --
-  -- Restoring the view here fires WinScrolled/CursorMoved, and those
-  -- autocmds each schedule a *deferred* clamp_scroll() call for later.
-  -- If a subsequent tick's redraw() runs before that deferred call
-  -- fires, it clamps against a view that's already stale by then.
-  -- state.suppress_scroll_clamp tells those autocmd handlers to skip
-  -- while ChatForge's own restore is what triggered them.
-  local saved_views = {}
-  if b then
-    for _, win in ipairs(vim.api.nvim_list_wins()) do
-      if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == b then
-        saved_views[win] = vim.api.nvim_win_call(win, vim.fn.winsaveview)
-      end
-    end
-  end
-
   local lines = render_entries()
   set_lines(lines)
+  local b = chat_buf()
   if b then
     vim.bo[b].modifiable = false
   end
   apply_highlights()
-
-  if next(saved_views) then
-    state.suppress_scroll_clamp = true
-    for win, view in pairs(saved_views) do
-      if vim.api.nvim_win_is_valid(win) then
-        vim.api.nvim_win_call(win, function()
-          vim.fn.winrestview(view)
-        end)
-      end
-    end
-    vim.schedule(function()
-      state.suppress_scroll_clamp = false
-    end)
-  end
 end
 
 local function append_entry(entry)

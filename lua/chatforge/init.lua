@@ -163,7 +163,7 @@ function M.setup(opts)
       state.set_model(src, cmd.args)
       vim.notify("[chatforge] Model → " .. cmd.args, vim.log.levels.INFO)
       if state.chat_is_open() then
-        chat.render_history(src)
+        render.write_header(src)
       end
       return
     end
@@ -201,7 +201,7 @@ function M.setup(opts)
             state.set_model(src, model)
             vim.notify("[chatforge] Model → " .. model, vim.log.levels.INFO)
             if state.chat_is_open() then
-              chat.render_history(src)
+              render.write_header(src)
             end
           end
         end)
@@ -228,7 +228,7 @@ function M.setup(opts)
           state.set_model(src, choice.model)
           vim.notify("[chatforge] Provider → " .. choice.provider .. ", Model → " .. choice.model, vim.log.levels.INFO)
           if state.chat_is_open() then
-            chat.render_history(src)
+            render.write_header(src)
           end
         end
       end)

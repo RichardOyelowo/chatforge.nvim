@@ -192,9 +192,8 @@ The message pane behavior is buffer-local:
 - `<Enter>` sends.
 - `<Enter>` accepts the selected completion item first when completion is visible.
 - `<C-j>` inserts a newline.
-- Typing `@` opens context completion in a small floating popup anchored to the right of the cursor, clamped so it always stays on screen.
-- `<Down>`/`<C-n>` and `<Up>`/`<C-p>` move the selection, `<CR>` accepts it, `<Esc>` dismisses the popup.
-- Completion does not touch Neovim's native completion menu or the user's global completion settings.
+- Typing `@` opens context completion.
+- Completion uses buffer-local menu settings and does not change the user's global completion UI.
 
 The chat view clamps scrolling so it does not collapse into a mostly empty one-line view after resizing or scrolling.
 

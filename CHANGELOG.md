@@ -4,6 +4,8 @@ All notable changes to ChatForge are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
 ## [0.4.0] - 2026-08-20
 
 ### Added
@@ -30,17 +32,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `:ChatBackend switch` duplicated, and had drifted from, that same default-model logic instead of reusing one shared resolver.
 - `completeopt` was assigned as a buffer-local option on the input buffer, which Neovim has never supported for that option. It is now scoped to the buffer through `BufEnter`/`BufLeave` instead.
 - Removed dead `lua/chatforge/api/backends.lua`, a second, disconnected Ollama implementation that nothing in the plugin required.
-- `:Chat` never accepted an argument, only `:ChatSend` did, so `:Chat <message>` raised `E488: Trailing characters` instead of opening and sending. Both commands now share the same code path.
-- `anthropic` and `deepseek`'s `list_models` never checked for an API key and never called any API. They returned the same three hardcoded model names unconditionally, which meant the combined `:ChatModel` picker always showed those six fake entries regardless of what was actually configured.
-- Staging a second block into a buffer that already had a staged block falsely marked the first one stale. `changedtick` is buffer-global, so ChatForge's own follow-up edit was being read as an external change to the buffer.
-- Clearing a proposal's highlight cleared the entire buffer's highlight namespace instead of just that block's line range, so resolving one staged block could erase another still-pending block's highlight in the same buffer.
-- A block reported stale kept its highlight lit indefinitely, even though the highlighted range no longer matched anything trustworthy once the buffer had moved past it.
-- Reopening the chat window after closing it showed a blank conversation instead of the source buffer's actual history. Only switching between source buffers while the chat stayed open restored history correctly; a fresh open never did.
-- Changing a buffer's model or provider with `:ChatModel` wiped the visible conversation down to a bare header, even though the underlying history was untouched. It looked like a brand new chat had started.
-- The chat window snapped back to the bottom repeatedly while a response was still streaming in, fighting anyone trying to scroll up and read something further above. Replacing the buffer's lines to update the "forging" status animation was resetting the window's view on every tick, and restoring that view was itself re-triggering the plugin's own scroll-clamping autocmds against stale state from a later tick.
-- Changing a buffer's model or provider with `:ChatModel` wiped the visible conversation down to a bare header, the same bug as the reopening issue above, just at a different call site.
-- Insert-mode `<CR>` did not reliably accept the highlighted completion match. `completeopt` includes `noselect`, so nothing was pre-selected until explicitly navigated, and `<C-y>` alone confirms nothing in that state.
-- Replaced the native completion menu (`vim.fn.complete()`) with a small floating popup for `@file`/`@dir` context references. The native menu positions itself below or above the cursor with no way to influence placement, and in the 8-line input pane it routinely had nowhere to render but over the text being typed. The new popup opens to the right of the cursor and is clamped so it can never render off-screen in either direction, with `<Down>`/`<C-n>`, `<Up>`/`<C-p>`, `<Esc>`, and `<CR>` to navigate, dismiss, and accept.
 
 ### Breaking
 
@@ -155,6 +146,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Normal prose after bare `@file` is never interpreted as a path.
 - Stale Accept and Reject operations stop before overwriting newer buffer edits.
 
+[Unreleased]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.4.0...HEAD
 [0.4.0]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/RichardOyelowo/chatforge.nvim/compare/v0.2.2...v0.2.3
